@@ -33,9 +33,12 @@
     "CHANGELOG.md"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && npm run build:web",
+    "build:server": "tsc",
+    "build:web": "npm --prefix web ci --no-audit --no-fund --silent && npm --prefix web run build && node scripts/copy-web.mjs",
     "dev:cli": "tsx src/bin/cli.ts",
     "dev:mcp": "tsx src/bin/mcp.ts",
+    "dev:web": "npm --prefix web run dev",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",

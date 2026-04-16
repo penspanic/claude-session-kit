@@ -5,6 +5,9 @@ dist/
 .env
 .env.local
 
+# Web bundle (built fresh by npm run build:web)
+web/dist/
+
 # Local data — never commit session backups or DB
 data/
 *.db

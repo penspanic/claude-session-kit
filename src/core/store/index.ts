@@ -51,6 +51,16 @@ export interface SessionStore {
   ): RecentProjectStats[] | Promise<RecentProjectStats[]>;
 
   /**
+   * Sessions whose parent_session_id is in the given list (i.e. the subagents
+   * spawned by the listed main sessions). Returns the join with details.
+   */
+  listChildSessionsWithDetails(args: {
+    parent_session_ids: string[];
+    project_dir?: string;
+    host_id?: string;
+  }): SessionWithDetails[] | Promise<SessionWithDetails[]>;
+
+  /**
    * Replace all user messages for a session atomically. A re-parse must be
    * idempotent — calling this with the same input must not duplicate rows.
    */
