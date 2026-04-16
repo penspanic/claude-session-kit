@@ -42,6 +42,25 @@ export interface SessionFilter {
   until?: string;
 }
 
+export interface UserMessageRecord {
+  source_key: string;
+  host_id: string;
+  seq: number;
+  timestamp: string | null;
+  content: string;
+}
+
+export interface SearchHit {
+  source_key: string;
+  host_id: string;
+  seq: number;
+  timestamp: string | null;
+  snippet: string;
+  project_dir: string;
+  session_id: string;
+  started_at: string | null;
+}
+
 export interface SessionDetailsRecord {
   source_key: string;
   host_id: string;

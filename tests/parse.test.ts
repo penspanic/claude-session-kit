@@ -51,7 +51,7 @@ describe("parseSessionFile", () => {
       { type: "user", timestamp: "2026-04-16T10:01:30Z", message: { role: "user", content: "thanks" } },
     ]);
 
-    const d = await parseSessionFile(path);
+    const { details: d } = await parseSessionFile(path);
     expect(d.started_at).toBe("2026-04-16T10:00:00Z");
     expect(d.ended_at).toBe("2026-04-16T10:01:30Z");
     expect(d.message_count).toBe(4);
@@ -71,7 +71,7 @@ describe("parseSessionFile", () => {
 
   it("returns zeroed details for empty files", async () => {
     const path = writeJsonl([]);
-    const d = await parseSessionFile(path);
+    const { details: d } = await parseSessionFile(path);
     expect(d.message_count).toBe(0);
     expect(d.started_at).toBeNull();
     expect(d.ended_at).toBeNull();
@@ -90,10 +90,42 @@ describe("parseSessionFile", () => {
         '{"type":"assistant","timestamp":"2026-04-16T10:00:05Z","message":{"model":"x","content":[],"usage":{"input_tokens":1,"output_tokens":1}}}',
       ].join("\n"),
     );
-    const d = await parseSessionFile(path);
+    const { details: d } = await parseSessionFile(path);
     expect(d.parse_error_count).toBe(1);
     expect(d.user_message_count).toBe(1);
     expect(d.assistant_message_count).toBe(1);
+  });
+
+  it("extracts user-message content for FTS indexing", async () => {
+    const path = writeJsonl([
+      {
+        type: "user",
+        timestamp: "2026-04-16T10:00:00Z",
+        message: { role: "user", content: "first request" },
+      },
+      {
+        type: "user",
+        timestamp: "2026-04-16T10:01:00Z",
+        message: {
+          role: "user",
+          content: [
+            { type: "text", text: "text block 1" },
+            { type: "text", text: "text block 2" },
+            { type: "tool_result", tool_use_id: "abc", content: "ignored — not user intent" },
+          ],
+        },
+      },
+      {
+        type: "user",
+        message: { role: "user", content: [{ type: "tool_result", content: "no user text" }] },
+      },
+    ]);
+    const { userMessages } = await parseSessionFile(path);
+    expect(userMessages).toHaveLength(2);
+    expect(userMessages[0]!.seq).toBe(1);
+    expect(userMessages[0]!.content).toBe("first request");
+    expect(userMessages[1]!.seq).toBe(2);
+    expect(userMessages[1]!.content).toBe("text block 1\ntext block 2");
   });
 
   it("picks the most frequently used model when there's a mix", async () => {
@@ -102,7 +134,7 @@ describe("parseSessionFile", () => {
       { type: "assistant", message: { model: "sonnet", content: [], usage: {} } },
       { type: "assistant", message: { model: "sonnet", content: [], usage: {} } },
     ]);
-    const d = await parseSessionFile(path);
+    const { details: d } = await parseSessionFile(path);
     expect(d.model).toBe("sonnet");
   });
 });

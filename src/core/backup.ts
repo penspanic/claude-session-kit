@@ -113,7 +113,7 @@ export async function runBackup(
         // session logs are 100MB+, so we skip aggressively.
         const priorDetails = await store.getSessionDetails(file.relativeKey, config.hostId);
         if (!priorDetails || priorDetails.parsed_for_mtime !== fileMtime) {
-          const details = await parseSessionFile(file.sourcePath);
+          const { details, userMessages } = await parseSessionFile(file.sourcePath);
           const record: SessionDetailsRecord = {
             ...details,
             source_key: file.relativeKey,
@@ -122,6 +122,17 @@ export async function runBackup(
             parsed_for_mtime: fileMtime,
           };
           await store.upsertSessionDetails(record);
+          await store.replaceUserMessages(
+            file.relativeKey,
+            config.hostId,
+            userMessages.map((m) => ({
+              source_key: file.relativeKey,
+              host_id: config.hostId,
+              seq: m.seq,
+              timestamp: m.timestamp,
+              content: m.content,
+            })),
+          );
           sessionsParsed += 1;
         }
       }
