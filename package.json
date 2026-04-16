@@ -1,0 +1,59 @@
+{
+  "name": "claude-session-kit",
+  "version": "0.1.0",
+  "description": "Back up, index, and analyze Claude Code session logs. Exposes an MCP server so AI agents can query the archive natively.",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "mcp",
+    "backup",
+    "session",
+    "jsonl",
+    "rclone",
+    "ai-tools"
+  ],
+  "homepage": "https://github.com/penspanic/claude-session-kit#readme",
+  "bugs": "https://github.com/penspanic/claude-session-kit/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/penspanic/claude-session-kit.git"
+  },
+  "license": "MIT",
+  "author": "penspanic",
+  "type": "module",
+  "bin": {
+    "csk": "dist/bin/cli.js",
+    "csk-mcp": "dist/bin/mcp.js"
+  },
+  "files": [
+    "dist",
+    "scripts",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev:cli": "tsx src/bin/cli.ts",
+    "dev:mcp": "tsx src/bin/mcp.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "better-sqlite3": "^11.5.0",
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
