@@ -66,6 +66,9 @@ interface SessionDetailsRow {
   parse_error_count: number;
   parsed_at: string;
   parsed_for_mtime: string;
+  custom_title: string | null;
+  agent_name: string | null;
+  last_prompt: string | null;
 }
 
 export class SqliteStore implements SessionStore {
@@ -233,8 +236,9 @@ export class SqliteStore implements SessionStore {
           message_count, user_message_count, assistant_message_count,
           tool_use_count, tool_names, model, cwd, git_branch,
           input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
-          parse_error_count, parsed_at, parsed_for_mtime
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          parse_error_count, parsed_at, parsed_for_mtime,
+          custom_title, agent_name, last_prompt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (source_key, host_id) DO UPDATE SET
           started_at              = excluded.started_at,
           ended_at                = excluded.ended_at,
@@ -252,7 +256,10 @@ export class SqliteStore implements SessionStore {
           cache_read_tokens       = excluded.cache_read_tokens,
           parse_error_count       = excluded.parse_error_count,
           parsed_at               = excluded.parsed_at,
-          parsed_for_mtime        = excluded.parsed_for_mtime
+          parsed_for_mtime        = excluded.parsed_for_mtime,
+          custom_title            = excluded.custom_title,
+          agent_name              = excluded.agent_name,
+          last_prompt             = excluded.last_prompt
       `)
       .run(
         details.source_key,
@@ -274,6 +281,9 @@ export class SqliteStore implements SessionStore {
         details.parse_error_count,
         details.parsed_at,
         details.parsed_for_mtime,
+        details.custom_title,
+        details.agent_name,
+        details.last_prompt,
       );
   }
 
@@ -311,7 +321,10 @@ export class SqliteStore implements SessionStore {
           d.cache_read_tokens       AS d_cache_read_tokens,
           d.parse_error_count       AS d_parse_error_count,
           d.parsed_at               AS d_parsed_at,
-          d.parsed_for_mtime        AS d_parsed_for_mtime
+          d.parsed_for_mtime        AS d_parsed_for_mtime,
+          d.custom_title            AS d_custom_title,
+          d.agent_name              AS d_agent_name,
+          d.last_prompt             AS d_last_prompt
         FROM sessions s
         LEFT JOIN session_details d
           ON s.source_key = d.source_key AND s.host_id = d.host_id
@@ -328,6 +341,62 @@ export class SqliteStore implements SessionStore {
       details: row.d_parsed_at
         ? this.rowToDetails(this.projectDetailRow(row))
         : null,
+    }));
+  }
+
+  listChildSessionsWithDetails(args: {
+    parent_session_ids: string[];
+    project_dir?: string;
+    host_id?: string;
+  }): SessionWithDetails[] {
+    if (args.parent_session_ids.length === 0) return [];
+    const placeholders = args.parent_session_ids.map(() => "?").join(",");
+    const where: string[] = [`s.parent_session_id IN (${placeholders})`];
+    const params: unknown[] = [...args.parent_session_ids];
+    if (args.project_dir) {
+      where.push("s.project_dir = ?");
+      params.push(args.project_dir);
+    }
+    if (args.host_id) {
+      where.push("s.host_id = ?");
+      params.push(args.host_id);
+    }
+
+    const rows = this.db
+      .prepare(`
+        SELECT
+          s.*,
+          d.started_at              AS d_started_at,
+          d.ended_at                AS d_ended_at,
+          d.message_count           AS d_message_count,
+          d.user_message_count      AS d_user_message_count,
+          d.assistant_message_count AS d_assistant_message_count,
+          d.tool_use_count          AS d_tool_use_count,
+          d.tool_names              AS d_tool_names,
+          d.model                   AS d_model,
+          d.cwd                     AS d_cwd,
+          d.git_branch              AS d_git_branch,
+          d.input_tokens            AS d_input_tokens,
+          d.output_tokens           AS d_output_tokens,
+          d.cache_creation_tokens   AS d_cache_creation_tokens,
+          d.cache_read_tokens       AS d_cache_read_tokens,
+          d.parse_error_count       AS d_parse_error_count,
+          d.parsed_at               AS d_parsed_at,
+          d.parsed_for_mtime        AS d_parsed_for_mtime,
+          d.custom_title            AS d_custom_title,
+          d.agent_name              AS d_agent_name,
+          d.last_prompt             AS d_last_prompt
+        FROM sessions s
+        LEFT JOIN session_details d
+          ON s.source_key = d.source_key AND s.host_id = d.host_id
+        WHERE ${where.join(" AND ")}
+        ORDER BY COALESCE(d.started_at, s.last_seen_at) ASC
+      `)
+      .all(...params) as Array<SessionRow & Record<string, unknown>>;
+
+    return rows.map((row) => ({
+      session: this.rowToSession(row),
+      details: row.d_parsed_at ? this.rowToDetails(this.projectDetailRow(row)) : null,
     }));
   }
 
@@ -374,6 +443,9 @@ export class SqliteStore implements SessionStore {
       parse_error_count: row.d_parse_error_count as number,
       parsed_at: row.d_parsed_at as string,
       parsed_for_mtime: row.d_parsed_for_mtime as string,
+      custom_title: row.d_custom_title as string | null,
+      agent_name: row.d_agent_name as string | null,
+      last_prompt: row.d_last_prompt as string | null,
     };
   }
 
@@ -608,6 +680,9 @@ export class SqliteStore implements SessionStore {
       parse_error_count: row.parse_error_count,
       parsed_at: row.parsed_at,
       parsed_for_mtime: row.parsed_for_mtime,
+      custom_title: row.custom_title,
+      agent_name: row.agent_name,
+      last_prompt: row.last_prompt,
     };
   }
 

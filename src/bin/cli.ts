@@ -8,6 +8,7 @@ import { RcloneBlobStore } from "../core/blob/rclone.js";
 import { loadConfig } from "../core/config.js";
 import { createStore } from "../core/store/index.js";
 import type { SessionSummaryRecord } from "../core/types.js";
+import { startServer } from "../core/web/server.js";
 
 const program = new Command();
 program
@@ -163,6 +164,37 @@ program
     } finally {
       await store.close();
     }
+  });
+
+program
+  .command("serve")
+  .description("Start the local read-only dashboard at http://127.0.0.1:<port>")
+  .option("-p, --port <number>", "Listen port (default 4567)", (v) => Number.parseInt(v, 10), 4567)
+  .option("--host <ip>", "Bind address (default 127.0.0.1)", "127.0.0.1")
+  .option("--web-root <path>", "Override the static bundle directory")
+  .action(async (opts: { port: number; host: string; webRoot?: string }) => {
+    const config = loadConfig();
+    const store = createStore(config);
+    await store.init();
+    const { server, url } = await startServer({
+      store,
+      hostId: config.hostId,
+      userId: config.userId,
+      dataDir: config.dataDir,
+      port: opts.port,
+      host: opts.host,
+      webRoot: opts.webRoot,
+    });
+    console.log(`csk serve: ${url}`);
+    console.log("Read-only dashboard. Press Ctrl+C to stop.");
+
+    const shutdown = async () => {
+      server.close();
+      await store.close();
+      process.exit(0);
+    };
+    process.on("SIGINT", shutdown);
+    process.on("SIGTERM", shutdown);
   });
 
 program

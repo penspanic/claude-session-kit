@@ -103,4 +103,7 @@ export interface SessionDetailsRecord {
   parse_error_count: number;
   parsed_at: string;
   parsed_for_mtime: string;
+  custom_title: string | null;
+  agent_name: string | null;
+  last_prompt: string | null;
 }

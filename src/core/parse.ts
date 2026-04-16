@@ -17,6 +17,9 @@ export interface SessionDetails {
   cache_creation_tokens: number;
   cache_read_tokens: number;
   parse_error_count: number;
+  custom_title: string | null;
+  agent_name: string | null;
+  last_prompt: string | null;
 }
 
 export interface ParsedUserMessage {
@@ -56,6 +59,9 @@ interface RawLine {
   cwd?: string;
   gitBranch?: string;
   message?: RawMessage;
+  customTitle?: string;
+  agentName?: string;
+  lastPrompt?: string;
 }
 
 /**
@@ -82,6 +88,9 @@ export async function parseSessionFile(path: string): Promise<ParsedSession> {
     cache_creation_tokens: 0,
     cache_read_tokens: 0,
     parse_error_count: 0,
+    custom_title: null,
+    agent_name: null,
+    last_prompt: null,
   };
   const userMessages: ParsedUserMessage[] = [];
 
@@ -151,11 +160,26 @@ export async function parseSessionFile(path: string): Promise<ParsedSession> {
         details.cache_creation_tokens += usage.cache_creation_input_tokens ?? 0;
         details.cache_read_tokens += usage.cache_read_input_tokens ?? 0;
       }
+    } else if (obj.type === "custom-title" && typeof obj.customTitle === "string") {
+      // Last write wins — Claude Code overwrites the title across the session.
+      details.custom_title = obj.customTitle;
+    } else if (obj.type === "agent-name" && typeof obj.agentName === "string") {
+      details.agent_name = obj.agentName;
+    } else if (obj.type === "last-prompt" && typeof obj.lastPrompt === "string") {
+      details.last_prompt = obj.lastPrompt;
     }
   }
 
   details.tool_names = [...toolNames].sort();
   details.model = pickMostCommon(modelCounts);
+
+  // Subagent sessions don't get `last-prompt` records emitted by Claude Code.
+  // Fall back to the first user message so the dashboard has *some* label —
+  // for subagents this is the dispatch prompt, which is exactly what's useful.
+  if (!details.last_prompt && userMessages.length > 0) {
+    details.last_prompt = userMessages[0]!.content;
+  }
+
   return { details, userMessages };
 }
 
