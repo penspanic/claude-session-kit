@@ -100,6 +100,54 @@ export interface SearchPayload {
   hits: SearchHit[];
 }
 
+export interface AnalyzePlan {
+  model: string;
+  model_known: boolean;
+  est_input_tokens: number;
+  est_output_tokens: number;
+  est_cost_usd: number | null;
+  api_calls: number;
+  candidates: Array<{ source_key: string; session_id: string; project_dir: string }>;
+  prices: { input_per_mtok: number; output_per_mtok: number } | null;
+  notes: string;
+}
+
+export interface AnalyzeCapabilities {
+  llm_available: boolean;
+  default_model: string;
+  suggested_models: Array<{ id: string; label: string }>;
+}
+
+export interface AnalyzePlanResponse extends AnalyzeCapabilities {
+  plan: AnalyzePlan;
+}
+
+export interface AnalyzeJobResult {
+  source_key: string;
+  status: "ok" | "failed";
+  input_tokens: number;
+  output_tokens: number;
+  one_liner: string | null;
+  error: string | null;
+}
+
+export interface AnalyzeJob {
+  id: string;
+  status: "queued" | "running" | "done" | "error";
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  model: string;
+  total: number;
+  processed: number;
+  ok: number;
+  failed: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  results: AnalyzeJobResult[];
+  error: string | null;
+}
+
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
   if (!res.ok) {
@@ -107,6 +155,22 @@ async function getJson<T>(url: string): Promise<T> {
     throw new Error(`${res.status} ${res.statusText}${text ? ` — ${text}` : ""}`);
   }
   return (await res.json()) as T;
+}
+
+async function postJson<T>(url: string, body: unknown): Promise<T> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const json = (await res.json().catch(() => ({}))) as T;
+  if (!res.ok) {
+    const reason = (json as { error?: string; reason?: string }).error
+      ?? (json as { error?: string; reason?: string }).reason
+      ?? `${res.status} ${res.statusText}`;
+    throw new Error(reason);
+  }
+  return json;
 }
 
 function qs(params: Record<string, string | number | undefined>): string {
@@ -131,4 +195,11 @@ export const api = {
     getJson<SessionDetailPayload>(`/api/sessions/${encodeURIComponent(sourceKey)}`),
   search: (params: { q: string; project?: string; limit?: number }) =>
     getJson<SearchPayload>(`/api/search${qs(params)}`),
+  analyzeCapabilities: () => getJson<AnalyzeCapabilities>("/api/analyze/capabilities"),
+  analyzePlan: (body: { project?: string; limit?: number; model?: string; host?: string }) =>
+    postJson<AnalyzePlanResponse>("/api/analyze/plan", body),
+  analyzeRun: (body: { project?: string; limit?: number; model?: string; host?: string }) =>
+    postJson<{ ok: true; job_id: string }>("/api/analyze/run", body),
+  analyzeJob: (id: string) =>
+    getJson<{ found: boolean; job: AnalyzeJob | null }>(`/api/analyze/jobs/${encodeURIComponent(id)}`),
 };

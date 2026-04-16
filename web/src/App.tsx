@@ -11,6 +11,7 @@ export function App() {
           <nav className="flex gap-4 text-sm">
             <NavItem to="/">Home</NavItem>
             <NavItem to="/search">Search</NavItem>
+            <NavItem to="/analyze">Analyze</NavItem>
           </nav>
           <div className="ml-auto text-xs text-neutral-500">read-only · localhost</div>
         </div>

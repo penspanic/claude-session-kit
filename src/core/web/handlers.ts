@@ -1,5 +1,8 @@
+import { DEFAULT_ANALYZE_MODEL, planAnalyzeRun, type AnalyzePlan } from "../analyze.js";
+import { SUGGESTED_MODELS } from "../pricing.js";
 import type { SessionStore } from "../store/index.js";
 import type { SessionSummaryRecord } from "../types.js";
+import type { AnalyzeJobRegistry } from "./jobs.js";
 
 export interface StatsPayload {
   totalSessions: number;
@@ -85,6 +88,11 @@ export interface HandlerContext {
   hostId: string;
   userId: string;
   dataDir: string;
+  jobs: AnalyzeJobRegistry;
+  /** Factory for the LLM client. Returns null when no API key is configured. */
+  makeLLMClient: (model: string) => import("../analyze.js").LLMClient | null;
+  /** Whether ANTHROPIC_API_KEY is set. UI hides analyze controls when false. */
+  llmAvailable: boolean;
 }
 
 export async function getStats(ctx: HandlerContext): Promise<StatsPayload> {
@@ -296,6 +304,97 @@ function toListItem(
     display_label: displayLabel,
     display_label_source: displayLabelSource,
   };
+}
+
+export interface AnalyzeRequestBody {
+  project?: string;
+  host?: string;
+  since?: string;
+  limit?: number;
+  model?: string;
+}
+
+export interface AnalyzePlanResponse {
+  plan: AnalyzePlan;
+  llm_available: boolean;
+  default_model: string;
+  suggested_models: typeof SUGGESTED_MODELS;
+}
+
+export async function getAnalyzeCapabilities(ctx: HandlerContext): Promise<{
+  llm_available: boolean;
+  default_model: string;
+  suggested_models: typeof SUGGESTED_MODELS;
+}> {
+  return {
+    llm_available: ctx.llmAvailable,
+    default_model: DEFAULT_ANALYZE_MODEL,
+    suggested_models: SUGGESTED_MODELS,
+  };
+}
+
+export async function postAnalyzePlan(
+  ctx: HandlerContext,
+  body: AnalyzeRequestBody,
+): Promise<AnalyzePlanResponse> {
+  const limit = clampInt(body.limit, 1, 200, 25);
+  const plan = await planAnalyzeRun(
+    ctx.store,
+    {
+      host_id: body.host ?? ctx.hostId,
+      project_dir: body.project,
+      since: body.since,
+      limit,
+    },
+    body.model ?? DEFAULT_ANALYZE_MODEL,
+  );
+  return {
+    plan,
+    llm_available: ctx.llmAvailable,
+    default_model: DEFAULT_ANALYZE_MODEL,
+    suggested_models: SUGGESTED_MODELS,
+  };
+}
+
+export async function postAnalyzeRun(
+  ctx: HandlerContext,
+  body: AnalyzeRequestBody,
+): Promise<{ ok: false; reason: string } | { ok: true; job_id: string }> {
+  if (!ctx.llmAvailable) {
+    return {
+      ok: false,
+      reason: "ANTHROPIC_API_KEY is not set on the server. Restart `csk serve` with the env var.",
+    };
+  }
+  const limit = clampInt(body.limit, 1, 200, 25);
+  const model = body.model ?? DEFAULT_ANALYZE_MODEL;
+  const plan = await planAnalyzeRun(
+    ctx.store,
+    {
+      host_id: body.host ?? ctx.hostId,
+      project_dir: body.project,
+      since: body.since,
+      limit,
+    },
+    model,
+  );
+  if (plan.candidates.length === 0) {
+    return { ok: false, reason: "No candidate sessions to analyze." };
+  }
+  const client = ctx.makeLLMClient(model);
+  if (!client) {
+    return { ok: false, reason: "Failed to construct LLM client." };
+  }
+  const job = ctx.jobs.start({ plan, store: ctx.store, client });
+  return { ok: true, job_id: job.id };
+}
+
+export async function getAnalyzeJob(
+  ctx: HandlerContext,
+  id: string,
+): Promise<{ found: boolean; job: ReturnType<AnalyzeJobRegistry["get"]> }> {
+  const job = ctx.jobs.get(id);
+  return { found: job !== null, job };
 }
 
 function clampInt(value: number | undefined, min: number, max: number, fallback: number): number {

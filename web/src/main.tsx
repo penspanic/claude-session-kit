@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { RouterProvider, createBrowserRouter } from "react-router-dom";
 import { App } from "./App";
+import { AnalyzePage } from "./pages/AnalyzePage";
 import { HomePage } from "./pages/HomePage";
 import { ProjectPage } from "./pages/ProjectPage";
 import { SearchPage } from "./pages/SearchPage";
@@ -17,6 +18,7 @@ const router = createBrowserRouter([
       { path: "p", element: <ProjectPage /> },
       { path: "s", element: <SessionPage /> },
       { path: "search", element: <SearchPage /> },
+      { path: "analyze", element: <AnalyzePage /> },
     ],
   },
 ]);

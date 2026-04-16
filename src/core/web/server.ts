@@ -2,8 +2,11 @@ import { createReadStream, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { AnthropicClient } from "../anthropic.js";
 import type { SessionStore } from "../store/index.js";
+import { AnalyzeJobRegistry } from "./jobs.js";
 import { routeApi } from "./router.js";
+import type { HandlerContext } from "./handlers.js";
 
 export interface ServeOptions {
   store: SessionStore;
@@ -14,6 +17,8 @@ export interface ServeOptions {
   host?: string;
   webRoot?: string;
 }
+
+const MAX_REQUEST_BODY_BYTES = 1_000_000;
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -35,11 +40,18 @@ const MIME: Record<string, string> = {
 
 export function startServer(options: ServeOptions): Promise<{ server: Server; url: string }> {
   const webRoot = resolve(options.webRoot ?? defaultWebRoot());
-  const ctx = {
+  const llmAvailable = Boolean(process.env.ANTHROPIC_API_KEY);
+  const ctx: HandlerContext = {
     store: options.store,
     hostId: options.hostId,
     userId: options.userId,
     dataDir: options.dataDir,
+    jobs: new AnalyzeJobRegistry(),
+    llmAvailable,
+    makeLLMClient: (model) => {
+      if (!llmAvailable) return null;
+      return new AnthropicClient({ model });
+    },
   };
 
   const server = createServer((req, res) => {
@@ -61,7 +73,7 @@ export function startServer(options: ServeOptions): Promise<{ server: Server; ur
 async function handle(
   req: IncomingMessage,
   res: ServerResponse,
-  ctx: { store: SessionStore; hostId: string; userId: string; dataDir: string },
+  ctx: HandlerContext,
   webRoot: string,
 ): Promise<void> {
   const url = new URL(req.url ?? "/", "http://localhost");
@@ -70,16 +82,45 @@ async function handle(
   if (pathname.startsWith("/api/")) {
     const query: Record<string, string> = {};
     for (const [k, v] of url.searchParams) query[k] = v;
+    const method = req.method ?? "GET";
+    let body: unknown;
+    if (method === "POST" || method === "PUT" || method === "PATCH") {
+      try {
+        body = await readJsonBody(req);
+      } catch (err) {
+        respondJson(res, 400, { error: (err as Error).message });
+        return;
+      }
+    }
     const result = await routeApi(ctx, {
-      method: req.method ?? "GET",
+      method,
       path: pathname,
       query,
+      body,
     });
     respondJson(res, result.status, result.body);
     return;
   }
 
   await serveStatic(res, webRoot, pathname);
+}
+
+async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of req) {
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string);
+    total += buf.length;
+    if (total > MAX_REQUEST_BODY_BYTES) throw new Error("request body too large");
+    chunks.push(buf);
+  }
+  if (total === 0) return undefined;
+  const text = Buffer.concat(chunks).toString("utf8");
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    throw new Error(`invalid JSON body: ${(err as Error).message}`);
+  }
 }
 
 async function serveStatic(res: ServerResponse, webRoot: string, urlPath: string): Promise<void> {

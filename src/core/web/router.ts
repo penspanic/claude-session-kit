@@ -1,9 +1,14 @@
 import {
+  getAnalyzeCapabilities,
+  getAnalyzeJob,
   getRecent,
   getSession,
   getSessions,
   getStats,
+  postAnalyzePlan,
+  postAnalyzeRun,
   search,
+  type AnalyzeRequestBody,
   type HandlerContext,
 } from "./handlers.js";
 
@@ -11,6 +16,7 @@ export interface ApiRequest {
   method: string;
   path: string;
   query: Record<string, string>;
+  body?: unknown;
 }
 
 export interface ApiResponse {
@@ -19,6 +25,9 @@ export interface ApiResponse {
 }
 
 export async function routeApi(ctx: HandlerContext, req: ApiRequest): Promise<ApiResponse> {
+  if (req.method === "POST") {
+    return routePost(ctx, req);
+  }
   if (req.method !== "GET") {
     return { status: 405, body: { error: "Method Not Allowed" } };
   }
@@ -62,6 +71,17 @@ export async function routeApi(ctx: HandlerContext, req: ApiRequest): Promise<Ap
     return { status: payload.found ? 200 : 404, body: payload };
   }
 
+  if (req.path === "/api/analyze/capabilities") {
+    return { status: 200, body: await getAnalyzeCapabilities(ctx) };
+  }
+
+  if (req.path.startsWith("/api/analyze/jobs/")) {
+    const id = decodeURIComponent(req.path.slice("/api/analyze/jobs/".length));
+    if (!id) return { status: 400, body: { error: "job id required" } };
+    const out = await getAnalyzeJob(ctx, id);
+    return { status: out.found ? 200 : 404, body: out };
+  }
+
   if (req.path === "/api/search") {
     return {
       status: 200,
@@ -76,6 +96,19 @@ export async function routeApi(ctx: HandlerContext, req: ApiRequest): Promise<Ap
     };
   }
 
+  return { status: 404, body: { error: "Not Found" } };
+}
+
+async function routePost(ctx: HandlerContext, req: ApiRequest): Promise<ApiResponse> {
+  if (req.path === "/api/analyze/plan") {
+    const body = (req.body ?? {}) as AnalyzeRequestBody;
+    return { status: 200, body: await postAnalyzePlan(ctx, body) };
+  }
+  if (req.path === "/api/analyze/run") {
+    const body = (req.body ?? {}) as AnalyzeRequestBody;
+    const out = await postAnalyzeRun(ctx, body);
+    return { status: out.ok ? 202 : 400, body: out };
+  }
   return { status: 404, body: { error: "Not Found" } };
 }
 
