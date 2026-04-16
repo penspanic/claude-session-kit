@@ -29,6 +29,7 @@ describe("runBackup", () => {
     expect(result.filesCopied).toBe(3);
     expect(result.filesSkipped).toBe(0);
     expect(result.sessionsIndexed).toBe(2); // tool-results/out.txt is mirrored but not indexed
+    expect(result.sessionsParsed).toBe(2); // both jsonl sessions are parsed on first run
 
     expect(await blob.stat("-projA/sess-1.jsonl")).not.toBeNull();
     expect(await blob.stat("-projA/sess-1/subagents/agent-1.jsonl")).not.toBeNull();
@@ -36,8 +37,20 @@ describe("runBackup", () => {
 
     expect(store.countSessions()).toBe(2);
     expect(store.countSessions({ kind: "subagent" })).toBe(1);
+    expect(store.countParsedSessions()).toBe(2);
     const subagents = store.listSessions({ kind: "subagent" });
     expect(subagents[0]!.parent_session_id).toBe("sess-1");
+    store.close();
+  });
+
+  it("does not re-parse sessions on a second run when mtime is unchanged", async () => {
+    const { env, store, blob } = bootstrap();
+    writeFakeSession(env.sourceDir, "-proj", "sess-1", "{}");
+
+    const first = await runBackup(env.config, store, blob);
+    expect(first.sessionsParsed).toBe(1);
+    const second = await runBackup(env.config, store, blob);
+    expect(second.sessionsParsed).toBe(0);
     store.close();
   });
 
@@ -100,7 +113,8 @@ describe("runBackup", () => {
       putFile: async () => {
         throw new Error("disk full");
       },
-      list: async function* () {},
+      // eslint-disable-next-line require-yield
+      list: async function* (): AsyncIterable<never> {},
       delete: async () => {},
     };
     writeFakeSession(env.sourceDir, "-proj", "sess-1", "{}");

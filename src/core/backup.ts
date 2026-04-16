@@ -1,9 +1,10 @@
 import type { BlobStore } from "./blob/index.js";
 import type { Config } from "./config.js";
 import { isProjectAllowed } from "./config.js";
+import { parseSessionFile } from "./parse.js";
 import { classifySessionFile, projectOf, walkFiles } from "./scan.js";
 import type { SessionStore } from "./store/index.js";
-import type { BackupRun, SessionRecord } from "./types.js";
+import type { BackupRun, SessionDetailsRecord, SessionRecord } from "./types.js";
 
 /**
  * Remote backends (rclone → GDrive/OneDrive/...) can round mtimes — some APIs
@@ -27,6 +28,7 @@ export interface BackupResult {
   filesSkipped: number;
   bytesCopied: number;
   sessionsIndexed: number;
+  sessionsParsed: number;
   durationMs: number;
   status: BackupRun["status"];
   errorMessage: string | null;
@@ -63,6 +65,7 @@ export async function runBackup(
   let filesSkipped = 0;
   let bytesCopied = 0;
   let sessionsIndexed = 0;
+  let sessionsParsed = 0;
 
   try {
     for await (const file of walkFiles(config.sourceDir)) {
@@ -88,6 +91,7 @@ export async function runBackup(
       const classification = classifySessionFile(file.relativeKey);
       if (classification) {
         const nowIso = new Date().toISOString();
+        const fileMtime = file.mtime.toISOString();
         const record: SessionRecord = {
           source_key: file.relativeKey,
           kind: classification.kind,
@@ -97,12 +101,29 @@ export async function runBackup(
           session_id: classification.sessionId,
           parent_session_id: classification.parentSessionId,
           file_size: file.size,
-          file_mtime: file.mtime.toISOString(),
+          file_mtime: fileMtime,
           first_seen_at: nowIso,
           last_seen_at: nowIso,
         };
         await store.upsertSession(record);
         sessionsIndexed += 1;
+
+        // Parse the JSONL body for metadata only if the file changed since
+        // last parse (or was never parsed). Parsing is O(file size), and some
+        // session logs are 100MB+, so we skip aggressively.
+        const priorDetails = await store.getSessionDetails(file.relativeKey, config.hostId);
+        if (!priorDetails || priorDetails.parsed_for_mtime !== fileMtime) {
+          const details = await parseSessionFile(file.sourcePath);
+          const record: SessionDetailsRecord = {
+            ...details,
+            source_key: file.relativeKey,
+            host_id: config.hostId,
+            parsed_at: nowIso,
+            parsed_for_mtime: fileMtime,
+          };
+          await store.upsertSessionDetails(record);
+          sessionsParsed += 1;
+        }
       }
     }
 
@@ -122,6 +143,7 @@ export async function runBackup(
       filesSkipped,
       bytesCopied,
       sessionsIndexed,
+      sessionsParsed,
       durationMs: finishedAt.getTime() - startedAt.getTime(),
       status: "success",
       errorMessage: null,
@@ -144,6 +166,7 @@ export async function runBackup(
       filesSkipped,
       bytesCopied,
       sessionsIndexed,
+      sessionsParsed,
       durationMs: finishedAt.getTime() - startedAt.getTime(),
       status: "error",
       errorMessage: message,
