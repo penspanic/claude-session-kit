@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import m001 from "./001_init.js";
 import m002 from "./002_session_details.js";
 import m003 from "./003_user_messages_fts.js";
+import m004 from "./004_session_summaries.js";
 
 export interface Migration {
   version: number;
@@ -13,7 +14,7 @@ export interface Migration {
  * Ordered list of all migrations. Add new ones here.
  * Versions must be unique, strictly increasing integers.
  */
-const MIGRATIONS: Migration[] = [m001, m002, m003];
+const MIGRATIONS: Migration[] = [m001, m002, m003, m004];
 
 // Sanity check: versions are strictly increasing.
 for (let i = 1; i < MIGRATIONS.length; i += 1) {

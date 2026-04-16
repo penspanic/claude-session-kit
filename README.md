@@ -119,8 +119,10 @@ Current tools:
 | `csk_get_session` | Fetch a single session by `source_key`, with parsed details. |
 | `csk_recent` | Per-project session counts over the last N days. |
 | `csk_search` | Full-text search (FTS5) over user-message content. Returns highlighted snippets with session context. |
+| `csk_summarize` | Return a session's LLM summary. Generates on demand (if `ANTHROPIC_API_KEY` is set) or returns cache. |
+| `csk_recap` | List summaries over a date range, grouped by project. "What did I do this week?" in one tool call. |
 
-More tools coming (LLM summarization, pattern detection).
+More tools coming (pattern detection, skill-gap extraction).
 
 ## Configuration reference
 
@@ -151,8 +153,23 @@ Project filters in `config.json`:
 csk backup              Mirror the source directory into the blob store
 csk status [--json]     Summarize the last backup and the index
 csk status --host <id>  Filter status by host_id
+csk analyze [opts]      LLM-summarize parsed sessions (requires ANTHROPIC_API_KEY)
 csk doctor              Verify source, store, and blob backend
 ```
+
+### `csk analyze`
+
+Generates structured summaries (one-liner, what-tried, outcome, notable events, blog hooks, tags) using Anthropic's API. Summaries are cached in SQLite keyed by the source file's mtime so re-runs skip anything still current.
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+csk analyze --limit 10              # first 10 unanalyzed sessions
+csk analyze --project -Users-me-Repo --since 2026-04-01
+csk analyze --dry-run --limit 50    # preview candidates without calling the API
+csk analyze --model claude-haiku-4-5-20251001   # override model
+```
+
+By default uses Haiku. For 1000 sessions expect ~$3-6 in token costs; the CLI prints per-session usage.
 
 ## Architecture at a glance
 

@@ -13,6 +13,8 @@ import type {
   SessionFilter,
   SessionKind,
   SessionRecord,
+  SessionSummary,
+  SessionSummaryRecord,
   UserMessageRecord,
 } from "../types.js";
 import { migrate } from "./migrations/index.js";
@@ -447,6 +449,133 @@ export class SqliteStore implements SessionStore {
       `)
       .all(...params, limit) as SearchHit[];
     return rows;
+  }
+
+  getUserMessages(sourceKey: string, hostId: string): UserMessageRecord[] {
+    return this.db
+      .prepare(`
+        SELECT source_key, host_id, seq, timestamp, content
+        FROM user_messages
+        WHERE source_key = ? AND host_id = ?
+        ORDER BY seq
+      `)
+      .all(sourceKey, hostId) as UserMessageRecord[];
+  }
+
+  upsertSessionSummary(record: SessionSummaryRecord): void {
+    this.db
+      .prepare(`
+        INSERT INTO session_summaries (
+          source_key, host_id, one_liner, summary_json, tags, model,
+          input_tokens, output_tokens, generated_at, generated_for_mtime
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (source_key, host_id) DO UPDATE SET
+          one_liner            = excluded.one_liner,
+          summary_json         = excluded.summary_json,
+          tags                 = excluded.tags,
+          model                = excluded.model,
+          input_tokens         = excluded.input_tokens,
+          output_tokens        = excluded.output_tokens,
+          generated_at         = excluded.generated_at,
+          generated_for_mtime  = excluded.generated_for_mtime
+      `)
+      .run(
+        record.source_key,
+        record.host_id,
+        record.one_liner,
+        JSON.stringify(record.summary),
+        JSON.stringify(record.tags),
+        record.model,
+        record.input_tokens,
+        record.output_tokens,
+        record.generated_at,
+        record.generated_for_mtime,
+      );
+  }
+
+  getSessionSummary(sourceKey: string, hostId: string): SessionSummaryRecord | null {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM session_summaries WHERE source_key = ? AND host_id = ?`,
+      )
+      .get(sourceKey, hostId) as
+      | {
+          source_key: string;
+          host_id: string;
+          one_liner: string | null;
+          summary_json: string;
+          tags: string | null;
+          model: string;
+          input_tokens: number;
+          output_tokens: number;
+          generated_at: string;
+          generated_for_mtime: string;
+        }
+      | undefined;
+    if (!row) return null;
+    return {
+      source_key: row.source_key,
+      host_id: row.host_id,
+      one_liner: row.one_liner ?? "",
+      summary: JSON.parse(row.summary_json) as SessionSummary,
+      tags: row.tags ? (JSON.parse(row.tags) as string[]) : [],
+      model: row.model,
+      input_tokens: row.input_tokens,
+      output_tokens: row.output_tokens,
+      generated_at: row.generated_at,
+      generated_for_mtime: row.generated_for_mtime,
+    };
+  }
+
+  listUnanalyzedSessions(filter: {
+    host_id?: string;
+    project_dir?: string;
+    since?: string;
+    limit?: number;
+  }): SessionRecord[] {
+    const where: string[] = ["d.source_key IS NOT NULL"];
+    const params: unknown[] = [];
+    if (filter.host_id) {
+      where.push("s.host_id = ?");
+      params.push(filter.host_id);
+    }
+    if (filter.project_dir) {
+      where.push("s.project_dir = ?");
+      params.push(filter.project_dir);
+    }
+    if (filter.since) {
+      where.push("COALESCE(d.started_at, s.last_seen_at) >= ?");
+      params.push(filter.since);
+    }
+    where.push(
+      "(sum.source_key IS NULL OR sum.generated_for_mtime != d.parsed_for_mtime)",
+    );
+
+    const limit = filter.limit ?? 50;
+
+    return this.db
+      .prepare(`
+        SELECT s.*
+        FROM sessions s
+        INNER JOIN session_details d
+          ON s.source_key = d.source_key AND s.host_id = d.host_id
+        LEFT JOIN session_summaries sum
+          ON s.source_key = sum.source_key AND s.host_id = sum.host_id
+        WHERE ${where.join(" AND ")}
+        ORDER BY COALESCE(d.started_at, s.last_seen_at) DESC
+        LIMIT ?
+      `)
+      .all(...params, limit)
+      .map((r) => this.rowToSession(r as SessionRow));
+  }
+
+  countSummaries(hostId?: string): number {
+    const sql = hostId
+      ? `SELECT COUNT(*) AS n FROM session_summaries WHERE host_id = ?`
+      : `SELECT COUNT(*) AS n FROM session_summaries`;
+    const stmt = this.db.prepare(sql);
+    const row = (hostId ? stmt.get(hostId) : stmt.get()) as { n: number };
+    return row.n;
   }
 
   countParsedSessions(hostId?: string): number {

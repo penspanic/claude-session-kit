@@ -61,6 +61,28 @@ export interface SearchHit {
   started_at: string | null;
 }
 
+export interface SessionSummary {
+  one_liner: string;
+  what_tried: string;
+  outcome: string;
+  notable: string[];
+  blog_hooks: string[];
+  tags: string[];
+}
+
+export interface SessionSummaryRecord {
+  source_key: string;
+  host_id: string;
+  one_liner: string;
+  summary: SessionSummary;
+  tags: string[];
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  generated_at: string;
+  generated_for_mtime: string;
+}
+
 export interface SessionDetailsRecord {
   source_key: string;
   host_id: string;
