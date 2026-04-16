@@ -1,9 +1,11 @@
 import type { Config } from "../config.js";
 import type {
   BackupRun,
+  SearchHit,
   SessionDetailsRecord,
   SessionFilter,
   SessionRecord,
+  UserMessageRecord,
 } from "../types.js";
 import { SqliteStore } from "./sqlite.js";
 
@@ -46,6 +48,29 @@ export interface SessionStore {
     days: number,
     hostId?: string,
   ): RecentProjectStats[] | Promise<RecentProjectStats[]>;
+
+  /**
+   * Replace all user messages for a session atomically. A re-parse must be
+   * idempotent — calling this with the same input must not duplicate rows.
+   */
+  replaceUserMessages(
+    sourceKey: string,
+    hostId: string,
+    messages: UserMessageRecord[],
+  ): void | Promise<void>;
+
+  /**
+   * Full-text search over user-message content. Returns session context with
+   * a highlighted snippet. Results are ranked by FTS5's built-in relevance.
+   */
+  searchUserMessages(args: {
+    query: string;
+    project_dir?: string;
+    host_id?: string;
+    since?: string;
+    until?: string;
+    limit?: number;
+  }): SearchHit[] | Promise<SearchHit[]>;
 }
 
 export interface SessionWithDetails {

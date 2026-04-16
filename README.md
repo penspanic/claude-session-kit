@@ -118,8 +118,9 @@ Current tools:
 | `csk_list_sessions` | List sessions with parsed metadata. Filter by project, host, kind, date range, pagination. |
 | `csk_get_session` | Fetch a single session by `source_key`, with parsed details. |
 | `csk_recent` | Per-project session counts over the last N days. |
+| `csk_search` | Full-text search (FTS5) over user-message content. Returns highlighted snippets with session context. |
 
-More tools coming (FTS search, LLM summarization, pattern detection).
+More tools coming (LLM summarization, pattern detection).
 
 ## Configuration reference
 

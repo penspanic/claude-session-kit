@@ -8,10 +8,12 @@ import type {
 } from "./index.js";
 import type {
   BackupRun,
+  SearchHit,
   SessionDetailsRecord,
   SessionFilter,
   SessionKind,
   SessionRecord,
+  UserMessageRecord,
 } from "../types.js";
 import { migrate } from "./migrations/index.js";
 
@@ -371,6 +373,80 @@ export class SqliteStore implements SessionStore {
       parsed_at: row.d_parsed_at as string,
       parsed_for_mtime: row.d_parsed_for_mtime as string,
     };
+  }
+
+  replaceUserMessages(
+    sourceKey: string,
+    hostId: string,
+    messages: UserMessageRecord[],
+  ): void {
+    const del = this.db.prepare(
+      `DELETE FROM user_messages WHERE source_key = ? AND host_id = ?`,
+    );
+    const insert = this.db.prepare(`
+      INSERT INTO user_messages (source_key, host_id, seq, timestamp, content)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    const tx = this.db.transaction(() => {
+      del.run(sourceKey, hostId);
+      for (const m of messages) {
+        insert.run(m.source_key, m.host_id, m.seq, m.timestamp, m.content);
+      }
+    });
+    tx();
+  }
+
+  searchUserMessages(args: {
+    query: string;
+    project_dir?: string;
+    host_id?: string;
+    since?: string;
+    until?: string;
+    limit?: number;
+  }): SearchHit[] {
+    const where: string[] = ["um.rowid = f.rowid", "user_messages_fts MATCH ?"];
+    const params: unknown[] = [args.query];
+    if (args.project_dir) {
+      where.push("s.project_dir = ?");
+      params.push(args.project_dir);
+    }
+    if (args.host_id) {
+      where.push("um.host_id = ?");
+      params.push(args.host_id);
+    }
+    if (args.since) {
+      where.push("COALESCE(um.timestamp, s.last_seen_at) >= ?");
+      params.push(args.since);
+    }
+    if (args.until) {
+      where.push("COALESCE(um.timestamp, s.last_seen_at) <= ?");
+      params.push(args.until);
+    }
+    const limit = args.limit ?? 25;
+
+    const rows = this.db
+      .prepare(`
+        SELECT
+          um.source_key  AS source_key,
+          um.host_id     AS host_id,
+          um.seq         AS seq,
+          um.timestamp   AS timestamp,
+          snippet(user_messages_fts, 0, '<mark>', '</mark>', '...', 12) AS snippet,
+          s.project_dir  AS project_dir,
+          s.session_id   AS session_id,
+          d.started_at   AS started_at
+        FROM user_messages_fts f
+        JOIN user_messages um ON um.rowid = f.rowid
+        LEFT JOIN sessions s
+          ON s.source_key = um.source_key AND s.host_id = um.host_id
+        LEFT JOIN session_details d
+          ON d.source_key = um.source_key AND d.host_id = um.host_id
+        WHERE ${where.join(" AND ")}
+        ORDER BY rank
+        LIMIT ?
+      `)
+      .all(...params, limit) as SearchHit[];
+    return rows;
   }
 
   countParsedSessions(hostId?: string): number {

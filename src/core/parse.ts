@@ -19,6 +19,17 @@ export interface SessionDetails {
   parse_error_count: number;
 }
 
+export interface ParsedUserMessage {
+  seq: number;
+  timestamp: string | null;
+  content: string;
+}
+
+export interface ParsedSession {
+  details: SessionDetails;
+  userMessages: ParsedUserMessage[];
+}
+
 interface RawUsage {
   input_tokens?: number;
   output_tokens?: number;
@@ -29,9 +40,11 @@ interface RawUsage {
 interface RawBlock {
   type?: string;
   name?: string;
+  text?: string;
 }
 
 interface RawMessage {
+  role?: string;
   model?: string;
   content?: string | RawBlock[];
   usage?: RawUsage;
@@ -46,12 +59,13 @@ interface RawLine {
 }
 
 /**
- * Stream-parse a Claude Code session JSONL file into aggregate metadata.
+ * Stream-parse a Claude Code session JSONL file.
  *
- * This function is read-only — it never touches the DB or the blob store.
- * Malformed lines are counted in `parse_error_count` but do not abort the parse.
+ * Returns both aggregate metadata and the list of user-message contents
+ * (ready for FTS indexing). Read-only — never touches the DB or blob store.
+ * Malformed lines are counted in `parse_error_count` but do not abort.
  */
-export async function parseSessionFile(path: string): Promise<SessionDetails> {
+export async function parseSessionFile(path: string): Promise<ParsedSession> {
   const details: SessionDetails = {
     started_at: null,
     ended_at: null,
@@ -69,6 +83,7 @@ export async function parseSessionFile(path: string): Promise<SessionDetails> {
     cache_read_tokens: 0,
     parse_error_count: 0,
   };
+  const userMessages: ParsedUserMessage[] = [];
 
   const toolNames = new Set<string>();
   const modelCounts = new Map<string, number>();
@@ -102,6 +117,15 @@ export async function parseSessionFile(path: string): Promise<SessionDetails> {
     if (obj.type === "user") {
       details.message_count += 1;
       details.user_message_count += 1;
+
+      const text = extractUserText(obj.message);
+      if (text) {
+        userMessages.push({
+          seq: details.user_message_count,
+          timestamp: typeof ts === "string" ? ts : null,
+          content: text,
+        });
+      }
     } else if (obj.type === "assistant") {
       details.message_count += 1;
       details.assistant_message_count += 1;
@@ -132,7 +156,27 @@ export async function parseSessionFile(path: string): Promise<SessionDetails> {
 
   details.tool_names = [...toolNames].sort();
   details.model = pickMostCommon(modelCounts);
-  return details;
+  return { details, userMessages };
+}
+
+function extractUserText(msg: RawMessage | undefined): string | null {
+  if (!msg) return null;
+  const content = msg.content;
+  if (typeof content === "string") {
+    return content.trim() || null;
+  }
+  if (Array.isArray(content)) {
+    const parts: string[] = [];
+    for (const block of content) {
+      // Index text blocks only. tool_result blocks are assistant→tool plumbing,
+      // not user intent, and indexing them balloons the FTS table for no gain.
+      if (block?.type === "text" && typeof block.text === "string" && block.text.trim()) {
+        parts.push(block.text);
+      }
+    }
+    return parts.length ? parts.join("\n").trim() || null : null;
+  }
+  return null;
 }
 
 function pickMostCommon(counts: Map<string, number>): string | null {

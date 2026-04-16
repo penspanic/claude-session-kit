@@ -93,6 +93,33 @@ async function main() {
   );
 
   server.registerTool(
+    "csk_search",
+    {
+      description:
+        "Full-text search over user-message content across all Claude Code sessions. Accepts FTS5 query syntax (e.g. 'webgpu NEAR/3 shader', 'latency AND profiling'). Returns highlighted snippets plus the owning session's project and source_key.",
+      inputSchema: {
+        query: z.string().min(1).describe("FTS5 MATCH query."),
+        project: z.string().optional().describe("Filter to a single project_dir."),
+        host: z.string().optional().describe("Filter by host_id."),
+        since: z.string().optional().describe("ISO timestamp lower bound."),
+        until: z.string().optional().describe("ISO timestamp upper bound."),
+        limit: z.number().int().min(1).max(100).optional().describe("Max hits (default 25)."),
+      },
+    },
+    async (args) => {
+      const hits = await store.searchUserMessages({
+        query: args.query,
+        project_dir: args.project,
+        host_id: args.host,
+        since: args.since,
+        until: args.until,
+        limit: args.limit ?? 25,
+      });
+      return textContent({ count: hits.length, hits });
+    },
+  );
+
+  server.registerTool(
     "csk_recent",
     {
       description:

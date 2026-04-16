@@ -8,7 +8,8 @@ All notable changes to `claude-session-kit` are documented in this file. The for
 
 - **Schema migration system** (#2). `schema_migrations` table tracks applied versions; `SqliteStore.init()` runs pending migrations in a transaction. Existing pre-migration installs are backfilled to v1 automatically.
 - **JSONL session parser** (#1). Streams session files to extract message counts, tool usage, model, duration, cwd, git branch, and token usage. Results land in a new `session_details` table, keyed by `(source_key, host_id)`. The parser is incremental — re-runs only when the source file's mtime changes.
-- **MCP tools for session queries** (#3, partial). `csk_list_sessions`, `csk_get_session`, `csk_recent` — agents can now ask "what sessions did I run in OpenFieldFramework this week?" directly. FTS5-backed `csk_search` is deferred to a follow-up.
+- **MCP tools for session queries** (#3). `csk_list_sessions`, `csk_get_session`, `csk_recent` — agents can now ask "what sessions did I run in OpenFieldFramework this week?" directly.
+- **Full-text search over user messages** (#10). Parser now extracts user-message content into a new `user_messages` table indexed by FTS5 (external-content virtual table). The `csk_search` MCP tool accepts FTS5 query syntax (boolean, NEAR, phrase) and returns `<mark>`-highlighted snippets with session context.
 - `csk status` now shows parsed-session count alongside indexed count.
 - `BackupResult.sessionsParsed` field exposes how many files were freshly parsed during a run.
 
