@@ -1,10 +1,12 @@
 import {
+  deleteAnalyzeKey,
   getAnalyzeCapabilities,
   getAnalyzeJob,
   getRecent,
   getSession,
   getSessions,
   getStats,
+  postAnalyzeKey,
   postAnalyzePlan,
   postAnalyzeRun,
   search,
@@ -27,6 +29,9 @@ export interface ApiResponse {
 export async function routeApi(ctx: HandlerContext, req: ApiRequest): Promise<ApiResponse> {
   if (req.method === "POST") {
     return routePost(ctx, req);
+  }
+  if (req.method === "DELETE") {
+    return routeDelete(ctx, req);
   }
   if (req.method !== "GET") {
     return { status: 405, body: { error: "Method Not Allowed" } };
@@ -108,6 +113,19 @@ async function routePost(ctx: HandlerContext, req: ApiRequest): Promise<ApiRespo
     const body = (req.body ?? {}) as AnalyzeRequestBody;
     const out = await postAnalyzeRun(ctx, body);
     return { status: out.ok ? 202 : 400, body: out };
+  }
+  if (req.path === "/api/analyze/key") {
+    const body = (req.body ?? {}) as { api_key?: unknown };
+    const out = await postAnalyzeKey(ctx, body);
+    return { status: out.ok ? 200 : 400, body: out };
+  }
+  return { status: 404, body: { error: "Not Found" } };
+}
+
+async function routeDelete(ctx: HandlerContext, req: ApiRequest): Promise<ApiResponse> {
+  if (req.path === "/api/analyze/key") {
+    const out = await deleteAnalyzeKey(ctx);
+    return { status: out.ok ? 200 : 400, body: out };
   }
   return { status: 404, body: { error: "Not Found" } };
 }

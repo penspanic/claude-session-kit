@@ -112,8 +112,14 @@ export function AnalyzePage() {
         </p>
       </div>
 
-      {caps && !caps.llm_available && (
-        <ErrorBox message="ANTHROPIC_API_KEY is not set on the server. Restart `csk serve` with the env var to enable analysis." />
+      {caps && (
+        <ApiKeyBanner
+          caps={caps}
+          onChanged={async () => {
+            const fresh = await api.analyzeCapabilities();
+            setCaps(fresh);
+          }}
+        />
       )}
 
       <section className="rounded border border-neutral-800 bg-neutral-900/40 p-4 space-y-4">
@@ -322,5 +328,146 @@ function JobProgress({ job, onReset }: { job: AnalyzeJob; onReset: () => void })
         </button>
       )}
     </section>
+  );
+}
+
+function ApiKeyBanner({
+  caps,
+  onChanged,
+}: {
+  caps: AnalyzeCapabilities;
+  onChanged: () => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+
+  if (caps.llm_available) {
+    return (
+      <div className="rounded border border-emerald-900/60 bg-emerald-950/20 px-3 py-2 text-sm text-emerald-200 flex items-center gap-3 flex-wrap">
+        <span>
+          API key active
+          {caps.api_key_preview && (
+            <span className="ml-1 font-mono text-emerald-400">…{caps.api_key_preview}</span>
+          )}
+          <span className="ml-1 text-emerald-500/80 text-xs">
+            ({caps.api_key_source === "env" ? "from env" : "set in browser"})
+          </span>
+        </span>
+        <div className="ml-auto flex gap-2 text-xs">
+          <button
+            onClick={() => setOpen(true)}
+            className="px-2 py-1 rounded border border-emerald-800/60 hover:border-emerald-500"
+          >
+            Change
+          </button>
+          {caps.api_key_source === "runtime" && (
+            <button
+              onClick={async () => {
+                if (!confirm("Clear the runtime API key?")) return;
+                await api.clearApiKey();
+                await onChanged();
+              }}
+              className="px-2 py-1 rounded border border-emerald-800/60 hover:border-red-500 hover:text-red-300"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+        {open && (
+          <ApiKeyModal
+            onClose={() => setOpen(false)}
+            onSaved={async () => {
+              setOpen(false);
+              await onChanged();
+            }}
+          />
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded border border-amber-900/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-200 flex items-center gap-3 flex-wrap">
+      <span>No API key set — analysis is disabled.</span>
+      <button
+        onClick={() => setOpen(true)}
+        className="ml-auto px-3 py-1 rounded border border-amber-700 text-xs hover:border-amber-400"
+      >
+        Set API key
+      </button>
+      {open && (
+        <ApiKeyModal
+          onClose={() => setOpen(false)}
+          onSaved={async () => {
+            setOpen(false);
+            await onChanged();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ApiKeyModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => Promise<void> }) {
+  const [value, setValue] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.setApiKey(value.trim());
+      await onSaved();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-6"
+      onClick={onClose}
+    >
+      <form
+        onSubmit={submit}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-neutral-900 border border-neutral-700 rounded-lg p-5 w-full max-w-md space-y-4"
+      >
+        <h2 className="text-base font-semibold text-neutral-100">Set Anthropic API key</h2>
+        <p className="text-xs text-neutral-400 leading-relaxed">
+          Stored in this server process's memory only — not written to disk and lost when{" "}
+          <code className="text-neutral-300">csk serve</code> exits. For persistent setup, launch with{" "}
+          <code className="text-neutral-300">ANTHROPIC_API_KEY</code> set in the env.
+        </p>
+        <input
+          autoFocus
+          type="password"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="sk-ant-..."
+          className="w-full rounded border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm font-mono"
+        />
+        {error && <ErrorBox message={error} />}
+        <div className="flex gap-2 justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1.5 rounded border border-neutral-700 text-sm hover:border-neutral-500"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={busy || !value.trim()}
+            className="px-3 py-1.5 rounded border border-neutral-200 bg-neutral-100 text-neutral-900 text-sm font-medium disabled:opacity-30"
+          >
+            {busy ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }

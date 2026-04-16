@@ -40,17 +40,44 @@ const MIME: Record<string, string> = {
 
 export function startServer(options: ServeOptions): Promise<{ server: Server; url: string }> {
   const webRoot = resolve(options.webRoot ?? defaultWebRoot());
-  const llmAvailable = Boolean(process.env.ANTHROPIC_API_KEY);
+
+  const envKey = process.env.ANTHROPIC_API_KEY ?? null;
+  const runtime: { apiKey: string | null; source: "env" | "runtime" | null } = {
+    apiKey: envKey,
+    source: envKey ? "env" : null,
+  };
+
   const ctx: HandlerContext = {
     store: options.store,
     hostId: options.hostId,
     userId: options.userId,
     dataDir: options.dataDir,
     jobs: new AnalyzeJobRegistry(),
-    llmAvailable,
+    llmAvailable: () => runtime.apiKey !== null,
+    apiKeySource: () => runtime.source,
+    apiKeyPreview: () => (runtime.apiKey ? runtime.apiKey.slice(-4) : null),
+    setApiKey: (key) => {
+      const trimmed = key.trim();
+      if (!trimmed.startsWith("sk-")) {
+        return { ok: false, reason: "Anthropic keys start with `sk-`. Got something else." };
+      }
+      runtime.apiKey = trimmed;
+      runtime.source = "runtime";
+      return { ok: true };
+    },
+    clearApiKey: () => {
+      if (runtime.source === "env") {
+        // Don't clear env-provided keys at runtime — they'd just come back on
+        // the next reference and the UI would lie about state.
+        return false;
+      }
+      runtime.apiKey = null;
+      runtime.source = null;
+      return true;
+    },
     makeLLMClient: (model) => {
-      if (!llmAvailable) return null;
-      return new AnthropicClient({ model });
+      if (!runtime.apiKey) return null;
+      return new AnthropicClient({ apiKey: runtime.apiKey, model });
     },
   };
 

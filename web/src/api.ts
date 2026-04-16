@@ -114,6 +114,8 @@ export interface AnalyzePlan {
 
 export interface AnalyzeCapabilities {
   llm_available: boolean;
+  api_key_source: "env" | "runtime" | null;
+  api_key_preview: string | null;
   default_model: string;
   suggested_models: Array<{ id: string; label: string }>;
 }
@@ -202,4 +204,12 @@ export const api = {
     postJson<{ ok: true; job_id: string }>("/api/analyze/run", body),
   analyzeJob: (id: string) =>
     getJson<{ found: boolean; job: AnalyzeJob | null }>(`/api/analyze/jobs/${encodeURIComponent(id)}`),
+  setApiKey: (apiKey: string) =>
+    postJson<{ ok: true; api_key_preview: string | null }>("/api/analyze/key", { api_key: apiKey }),
+  clearApiKey: async () => {
+    const res = await fetch("/api/analyze/key", { method: "DELETE" });
+    const json = (await res.json().catch(() => ({}))) as { ok?: boolean; reason?: string };
+    if (!res.ok || !json.ok) throw new Error(json.reason ?? `${res.status} ${res.statusText}`);
+    return json as { ok: true };
+  },
 };

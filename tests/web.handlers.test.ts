@@ -9,12 +9,14 @@ import type {
 } from "../src/core/types.js";
 import type { LLMClient, LLMResponse, SummarizePrompt } from "../src/core/analyze.js";
 import {
+  deleteAnalyzeKey,
   getAnalyzeCapabilities,
   getAnalyzeJob,
   getRecent,
   getSession,
   getSessions,
   getStats,
+  postAnalyzeKey,
   postAnalyzePlan,
   postAnalyzeRun,
   search,
@@ -45,25 +47,46 @@ class StubLLM implements LLMClient {
   }
 }
 
-function makeCtx(opts: { llmAvailable?: boolean; llm?: LLMClient } = {}): {
+function makeCtx(opts: { llmAvailable?: boolean; llm?: LLMClient; keySource?: "env" | "runtime" } = {}): {
   ctx: HandlerContext;
   store: SqliteStore;
   llm: LLMClient;
+  runtime: { apiKey: string | null; source: "env" | "runtime" | null };
 } {
   const env = makeTempEnv();
   const store = new SqliteStore(env.config.store.path);
   store.init();
   const llm = opts.llm ?? new StubLLM();
+  const available = opts.llmAvailable ?? true;
+  const runtime = {
+    apiKey: available ? "sk-test-1234" : null,
+    source: (available ? opts.keySource ?? "runtime" : null) as "env" | "runtime" | null,
+  };
   return {
     store,
     llm,
+    runtime,
     ctx: {
       store,
       hostId: "h1",
       userId: "u1",
       dataDir: env.dataDir,
       jobs: new AnalyzeJobRegistry(),
-      llmAvailable: opts.llmAvailable ?? true,
+      llmAvailable: () => runtime.apiKey !== null,
+      apiKeySource: () => runtime.source,
+      apiKeyPreview: () => runtime.apiKey?.slice(-4) ?? null,
+      setApiKey: (k) => {
+        if (!k.startsWith("sk-")) return { ok: false, reason: "bad prefix" };
+        runtime.apiKey = k;
+        runtime.source = "runtime";
+        return { ok: true };
+      },
+      clearApiKey: () => {
+        if (runtime.source === "env") return false;
+        runtime.apiKey = null;
+        runtime.source = null;
+        return true;
+      },
       makeLLMClient: () => llm,
     },
   };
@@ -317,8 +340,53 @@ describe("analyze: capabilities + plan", () => {
     const { ctx, store } = makeCtx({ llmAvailable: false });
     const out = await getAnalyzeCapabilities(ctx);
     expect(out.llm_available).toBe(false);
+    expect(out.api_key_source).toBeNull();
+    expect(out.api_key_preview).toBeNull();
     expect(out.suggested_models.length).toBeGreaterThan(0);
     expect(out.default_model).toMatch(/^claude-/);
+    store.close();
+  });
+
+  it("getAnalyzeCapabilities surfaces key source and preview when set", async () => {
+    const { ctx, store } = makeCtx({ llmAvailable: true, keySource: "env" });
+    const out = await getAnalyzeCapabilities(ctx);
+    expect(out.llm_available).toBe(true);
+    expect(out.api_key_source).toBe("env");
+    expect(out.api_key_preview).toBe("1234");
+    store.close();
+  });
+
+  it("postAnalyzeKey rejects non-sk- prefix", async () => {
+    const { ctx, store } = makeCtx({ llmAvailable: false });
+    const out = await postAnalyzeKey(ctx, { api_key: "wrong-prefix" });
+    expect(out.ok).toBe(false);
+    expect(ctx.llmAvailable()).toBe(false);
+    store.close();
+  });
+
+  it("postAnalyzeKey accepts a well-formed key and flips llmAvailable", async () => {
+    const { ctx, store } = makeCtx({ llmAvailable: false });
+    const out = await postAnalyzeKey(ctx, { api_key: "sk-ant-test-abcd" });
+    expect(out.ok).toBe(true);
+    expect(ctx.llmAvailable()).toBe(true);
+    expect(ctx.apiKeyPreview()).toBe("abcd");
+    expect(ctx.apiKeySource()).toBe("runtime");
+    store.close();
+  });
+
+  it("deleteAnalyzeKey clears a runtime key", async () => {
+    const { ctx, store } = makeCtx({ llmAvailable: true, keySource: "runtime" });
+    const out = await deleteAnalyzeKey(ctx);
+    expect(out.ok).toBe(true);
+    expect(ctx.llmAvailable()).toBe(false);
+    store.close();
+  });
+
+  it("deleteAnalyzeKey refuses to clear an env-set key", async () => {
+    const { ctx, store } = makeCtx({ llmAvailable: true, keySource: "env" });
+    const out = await deleteAnalyzeKey(ctx);
+    expect(out.ok).toBe(false);
+    expect(ctx.llmAvailable()).toBe(true);
     store.close();
   });
 
@@ -417,9 +485,9 @@ describe("analyze: capabilities + plan", () => {
 });
 
 describe("routeApi", () => {
-  it("rejects non-GET/POST methods", async () => {
+  it("rejects non-GET/POST/DELETE methods", async () => {
     const { ctx, store } = makeCtx();
-    const res = await routeApi(ctx, { method: "DELETE", path: "/api/stats", query: {} });
+    const res = await routeApi(ctx, { method: "PUT", path: "/api/stats", query: {} });
     expect(res.status).toBe(405);
     store.close();
   });

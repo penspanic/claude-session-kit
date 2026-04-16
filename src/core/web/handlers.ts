@@ -91,8 +91,21 @@ export interface HandlerContext {
   jobs: AnalyzeJobRegistry;
   /** Factory for the LLM client. Returns null when no API key is configured. */
   makeLLMClient: (model: string) => import("../analyze.js").LLMClient | null;
-  /** Whether ANTHROPIC_API_KEY is set. UI hides analyze controls when false. */
-  llmAvailable: boolean;
+  /** Whether an API key is currently available (env or runtime-set). */
+  llmAvailable: () => boolean;
+  /**
+   * Where the current API key came from. UI uses this to label the banner
+   * ("set in env" vs "set in browser") and to decide whether DELETE is sane
+   * (clearing a runtime key is fine; clearing an env key has no effect after
+   * restart so we still allow it but warn).
+   */
+  apiKeySource: () => "env" | "runtime" | null;
+  /** Last 4 chars of the active key, for non-secret display. */
+  apiKeyPreview: () => string | null;
+  /** Set the runtime API key. Validates the prefix loosely (Anthropic keys start with `sk-`). */
+  setApiKey: (key: string) => { ok: boolean; reason?: string };
+  /** Clear the runtime API key. Returns false if the active key came from env (no-op). */
+  clearApiKey: () => boolean;
 }
 
 export async function getStats(ctx: HandlerContext): Promise<StatsPayload> {
@@ -323,14 +336,43 @@ export interface AnalyzePlanResponse {
 
 export async function getAnalyzeCapabilities(ctx: HandlerContext): Promise<{
   llm_available: boolean;
+  api_key_source: "env" | "runtime" | null;
+  api_key_preview: string | null;
   default_model: string;
   suggested_models: typeof SUGGESTED_MODELS;
 }> {
   return {
-    llm_available: ctx.llmAvailable,
+    llm_available: ctx.llmAvailable(),
+    api_key_source: ctx.apiKeySource(),
+    api_key_preview: ctx.apiKeyPreview(),
     default_model: DEFAULT_ANALYZE_MODEL,
     suggested_models: SUGGESTED_MODELS,
   };
+}
+
+export async function postAnalyzeKey(
+  ctx: HandlerContext,
+  body: { api_key?: unknown },
+): Promise<{ ok: boolean; reason?: string; api_key_preview?: string | null }> {
+  if (typeof body.api_key !== "string") {
+    return { ok: false, reason: "Body must be { api_key: string }." };
+  }
+  const result = ctx.setApiKey(body.api_key);
+  if (!result.ok) return result;
+  return { ok: true, api_key_preview: ctx.apiKeyPreview() };
+}
+
+export async function deleteAnalyzeKey(
+  ctx: HandlerContext,
+): Promise<{ ok: boolean; reason?: string }> {
+  const cleared = ctx.clearApiKey();
+  if (!cleared) {
+    return {
+      ok: false,
+      reason: "Active API key was set via ANTHROPIC_API_KEY env var; cannot clear at runtime. Restart `csk serve` without the env var to remove it.",
+    };
+  }
+  return { ok: true };
 }
 
 export async function postAnalyzePlan(
@@ -350,7 +392,7 @@ export async function postAnalyzePlan(
   );
   return {
     plan,
-    llm_available: ctx.llmAvailable,
+    llm_available: ctx.llmAvailable(),
     default_model: DEFAULT_ANALYZE_MODEL,
     suggested_models: SUGGESTED_MODELS,
   };
@@ -360,10 +402,10 @@ export async function postAnalyzeRun(
   ctx: HandlerContext,
   body: AnalyzeRequestBody,
 ): Promise<{ ok: false; reason: string } | { ok: true; job_id: string }> {
-  if (!ctx.llmAvailable) {
+  if (!ctx.llmAvailable()) {
     return {
       ok: false,
-      reason: "ANTHROPIC_API_KEY is not set on the server. Restart `csk serve` with the env var.",
+      reason: "API key not set. Use the Set API Key button (or set ANTHROPIC_API_KEY before launching).",
     };
   }
   const limit = clampInt(body.limit, 1, 200, 25);
