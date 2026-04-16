@@ -28,7 +28,12 @@ export interface SummarizePrompt {
 }
 
 export interface SummarizeInput {
-  session: SessionRecord;
+  // Only these fields are read by the prompt builder; narrowing the type lets
+  // callers pass either a full SessionRecord or an AnalyzeCandidate.
+  session: Pick<
+    SessionRecord,
+    "source_key" | "host_id" | "project_dir" | "kind" | "session_id"
+  >;
   details: SessionDetailsRecord | null;
   userMessages: UserMessageRecord[];
 }
@@ -219,20 +224,38 @@ export interface AnalyzePlanFilter {
   limit?: number;
 }
 
+export interface AnalyzeCandidate {
+  source_key: string;
+  host_id: string;
+  session_id: string;
+  project_dir: string;
+  kind: import("./types.js").SessionKind;
+  parent_session_id: string | null;
+  started_at: string | null;
+  user_message_count: number | null;
+  /** Per-session estimated input tokens under the heuristic. */
+  est_input_tokens: number;
+  /** Best-effort label: LLM one_liner > custom_title > agent_name > last_prompt. */
+  display_label: string | null;
+  display_label_source: "summary" | "custom_title" | "agent_name" | "last_prompt" | null;
+}
+
 export interface AnalyzePlan {
   model: string;
   /** True if we have a price entry for the model and the cost number is real. */
   model_known: boolean;
-  /** Estimated *prompt* input tokens summed across all calls (rough heuristic). */
+  /** Estimated *prompt* input tokens summed across all candidates (rough heuristic). */
   est_input_tokens: number;
   est_output_tokens: number;
   /** USD. Null when the model price is unknown. */
   est_cost_usd: number | null;
-  /** Number of API calls = number of candidate sessions. */
+  /** Number of candidate sessions. Run with the same set or a subset. */
   api_calls: number;
-  candidates: SessionRecord[];
+  candidates: AnalyzeCandidate[];
   /** Per-1M-token rates surfaced for the UI; null when unknown. */
   prices: { input_per_mtok: number; output_per_mtok: number } | null;
+  /** Output tokens estimated per call (constant). */
+  est_output_tokens_per_call: number;
   /**
    * Free-form rationale shown in UIs so users understand "추정치".
    * Lists the heuristic constants used.
@@ -254,7 +277,7 @@ export async function planAnalyzeRun(
   filter: AnalyzePlanFilter,
   model: string = DEFAULT_ANALYZE_MODEL,
 ): Promise<AnalyzePlan> {
-  const candidates = await Promise.resolve(
+  const sessions = await Promise.resolve(
     store.listUnanalyzedSessions({
       host_id: filter.host_id,
       project_dir: filter.project_dir,
@@ -263,13 +286,45 @@ export async function planAnalyzeRun(
     }),
   );
 
+  const candidates: AnalyzeCandidate[] = [];
   let estInputTokens = 0;
-  for (const session of candidates) {
+  for (const session of sessions) {
     const details = await Promise.resolve(store.getSessionDetails(session.source_key, session.host_id));
     const userMsgCount = details?.user_message_count ?? 0;
     const userMsgChars = Math.min(USER_MESSAGE_BUDGET_CHARS, userMsgCount * ESTIMATED_USER_MESSAGE_CHARS);
     const totalChars = userMsgChars + ESTIMATED_PROMPT_OVERHEAD_CHARS;
-    estInputTokens += Math.ceil(totalChars / CHARS_PER_TOKEN);
+    const sessionEstIn = Math.ceil(totalChars / CHARS_PER_TOKEN);
+    estInputTokens += sessionEstIn;
+
+    const customTitle = details?.custom_title ?? null;
+    const agentName = details?.agent_name ?? null;
+    const lastPrompt = details?.last_prompt ?? null;
+    let label: string | null = null;
+    let labelSource: AnalyzeCandidate["display_label_source"] = null;
+    if (customTitle) {
+      label = customTitle;
+      labelSource = "custom_title";
+    } else if (agentName) {
+      label = agentName;
+      labelSource = "agent_name";
+    } else if (lastPrompt) {
+      label = lastPrompt;
+      labelSource = "last_prompt";
+    }
+
+    candidates.push({
+      source_key: session.source_key,
+      host_id: session.host_id,
+      session_id: session.session_id,
+      project_dir: session.project_dir,
+      kind: session.kind,
+      parent_session_id: session.parent_session_id,
+      started_at: details?.started_at ?? null,
+      user_message_count: details?.user_message_count ?? null,
+      est_input_tokens: sessionEstIn,
+      display_label: label,
+      display_label_source: labelSource,
+    });
   }
   const estOutputTokens = candidates.length * ESTIMATED_OUTPUT_TOKENS_PER_CALL;
 
@@ -285,6 +340,7 @@ export async function planAnalyzeRun(
     api_calls: candidates.length,
     candidates,
     prices: price,
+    est_output_tokens_per_call: ESTIMATED_OUTPUT_TOKENS_PER_CALL,
     notes: `Estimate uses ~${CHARS_PER_TOKEN} chars/token, capped at ${USER_MESSAGE_BUDGET_CHARS / 1000}k chars per session, +${ESTIMATED_PROMPT_OVERHEAD_CHARS} chars overhead, ${ESTIMATED_OUTPUT_TOKENS_PER_CALL} output tokens/call. Actual usage will vary.`,
   };
 }

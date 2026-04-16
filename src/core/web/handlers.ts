@@ -325,6 +325,12 @@ export interface AnalyzeRequestBody {
   since?: string;
   limit?: number;
   model?: string;
+  /**
+   * Optional explicit selection. When present (and non-empty), Run analyzes
+   * exactly these source_keys instead of re-deriving from the filter. The UI
+   * uses this to honor user-checked subsets.
+   */
+  source_keys?: string[];
 }
 
 export interface AnalyzePlanResponse {
@@ -420,14 +426,31 @@ export async function postAnalyzeRun(
     },
     model,
   );
-  if (plan.candidates.length === 0) {
+
+  let chosen = plan.candidates;
+  if (Array.isArray(body.source_keys) && body.source_keys.length > 0) {
+    const set = new Set(body.source_keys);
+    chosen = plan.candidates.filter((c) => set.has(c.source_key));
+    if (chosen.length === 0) {
+      return {
+        ok: false,
+        reason: "None of the requested source_keys are eligible for analysis (already summarized, or filtered out).",
+      };
+    }
+  }
+
+  if (chosen.length === 0) {
     return { ok: false, reason: "No candidate sessions to analyze." };
   }
   const client = ctx.makeLLMClient(model);
   if (!client) {
     return { ok: false, reason: "Failed to construct LLM client." };
   }
-  const job = ctx.jobs.start({ plan, store: ctx.store, client });
+  const job = ctx.jobs.start({
+    plan: { ...plan, candidates: chosen },
+    store: ctx.store,
+    client,
+  });
   return { ok: true, job_id: job.id };
 }
 

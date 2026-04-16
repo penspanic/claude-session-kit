@@ -100,14 +100,29 @@ export interface SearchPayload {
   hits: SearchHit[];
 }
 
+export interface AnalyzeCandidate {
+  source_key: string;
+  host_id: string;
+  session_id: string;
+  project_dir: string;
+  kind: string;
+  parent_session_id: string | null;
+  started_at: string | null;
+  user_message_count: number | null;
+  est_input_tokens: number;
+  display_label: string | null;
+  display_label_source: "summary" | "custom_title" | "agent_name" | "last_prompt" | null;
+}
+
 export interface AnalyzePlan {
   model: string;
   model_known: boolean;
   est_input_tokens: number;
   est_output_tokens: number;
+  est_output_tokens_per_call: number;
   est_cost_usd: number | null;
   api_calls: number;
-  candidates: Array<{ source_key: string; session_id: string; project_dir: string }>;
+  candidates: AnalyzeCandidate[];
   prices: { input_per_mtok: number; output_per_mtok: number } | null;
   notes: string;
 }
@@ -200,8 +215,13 @@ export const api = {
   analyzeCapabilities: () => getJson<AnalyzeCapabilities>("/api/analyze/capabilities"),
   analyzePlan: (body: { project?: string; limit?: number; model?: string; host?: string }) =>
     postJson<AnalyzePlanResponse>("/api/analyze/plan", body),
-  analyzeRun: (body: { project?: string; limit?: number; model?: string; host?: string }) =>
-    postJson<{ ok: true; job_id: string }>("/api/analyze/run", body),
+  analyzeRun: (body: {
+    project?: string;
+    limit?: number;
+    model?: string;
+    host?: string;
+    source_keys?: string[];
+  }) => postJson<{ ok: true; job_id: string }>("/api/analyze/run", body),
   analyzeJob: (id: string) =>
     getJson<{ found: boolean; job: AnalyzeJob | null }>(`/api/analyze/jobs/${encodeURIComponent(id)}`),
   setApiKey: (apiKey: string) =>

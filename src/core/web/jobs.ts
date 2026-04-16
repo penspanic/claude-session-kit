@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { summarizeSession, type AnalyzePlan } from "../analyze.js";
+import { summarizeSession, type AnalyzeCandidate, type AnalyzePlan } from "../analyze.js";
 import type { LLMClient } from "../analyze.js";
 import type { SessionStore } from "../store/index.js";
-import type { SessionRecord, SessionSummaryRecord } from "../types.js";
+import type { SessionSummaryRecord } from "../types.js";
 
 export type JobStatus = "queued" | "running" | "done" | "error";
 
@@ -100,7 +100,7 @@ export class AnalyzeJobRegistry {
 
   private async run(
     job: AnalyzeJob,
-    candidates: SessionRecord[],
+    candidates: AnalyzeCandidate[],
     store: SessionStore,
     client: LLMClient,
   ): Promise<void> {

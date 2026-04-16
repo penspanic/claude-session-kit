@@ -1,14 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   api,
+  type AnalyzeCandidate,
   type AnalyzeCapabilities,
   type AnalyzeJob,
   type AnalyzePlan,
   type AnalyzePlanResponse,
 } from "../api";
 import { ErrorBox, Spinner } from "../components/Spinner";
-import { decodeProjectDir, formatNumber, shortProject } from "../lib/format";
+import { decodeProjectDir, formatNumber, relTime, shortProject, shortSessionId } from "../lib/format";
 
 export function AnalyzePage() {
   const [params] = useSearchParams();
@@ -23,6 +24,8 @@ export function AnalyzePage() {
   const [runError, setRunError] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [job, setJob] = useState<AnalyzeJob | null>(null);
+  /** source_keys the user has selected (or null until plan loads → defaults to all). */
+  const [selected, setSelected] = useState<Set<string> | null>(null);
 
   useEffect(() => {
     api.analyzeCapabilities().then((c) => {
@@ -38,6 +41,8 @@ export function AnalyzePage() {
     try {
       const res = await api.analyzePlan({ project: projectDir, limit, model });
       setPlanResp(res);
+      // Default selection: every candidate checked.
+      setSelected(new Set(res.plan.candidates.map((c) => c.source_key)));
     } catch (e) {
       setPlanError((e as Error).message);
     } finally {
@@ -50,15 +55,38 @@ export function AnalyzePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caps, model, limit, projectDir]);
 
+  const selectedKeys = useMemo(
+    () => (selected ? Array.from(selected) : []),
+    [selected],
+  );
+
   const startRun = async () => {
     setRunError(null);
     try {
-      const { job_id } = await api.analyzeRun({ project: projectDir, limit, model });
+      const { job_id } = await api.analyzeRun({
+        project: projectDir,
+        limit,
+        model,
+        source_keys: selectedKeys,
+      });
       setJobId(job_id);
     } catch (e) {
       setRunError((e as Error).message);
     }
   };
+
+  const toggle = (key: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev ?? []);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+  const selectAll = () => {
+    if (planResp) setSelected(new Set(planResp.plan.candidates.map((c) => c.source_key)));
+  };
+  const deselectAll = () => setSelected(new Set());
 
   // Poll job state every second while running.
   const pollRef = useRef<number | null>(null);
@@ -150,28 +178,141 @@ export function AnalyzePage() {
 
       {planError && <ErrorBox message={planError} />}
       {planning && <Spinner label="Computing estimate…" />}
-      {planResp && <PlanCard plan={planResp.plan} />}
 
-      {planResp && planResp.plan.api_calls > 0 && caps?.llm_available && !jobId && (
-        <div className="flex items-center gap-3">
-          <button
-            onClick={startRun}
-            className="px-4 py-2 rounded border border-neutral-200 bg-neutral-100 text-neutral-900 text-sm font-medium hover:bg-white"
-          >
-            Run analysis
-          </button>
-          <button
-            onClick={refreshPlan}
-            className="px-4 py-2 rounded border border-neutral-700 text-sm hover:border-neutral-500"
-          >
-            Refresh estimate
-          </button>
-        </div>
+      {planResp && !jobId && (
+        <>
+          <PlanCard plan={planResp.plan} selected={selected} />
+          <CandidateList
+            candidates={planResp.plan.candidates}
+            selected={selected ?? new Set()}
+            onToggle={toggle}
+            onSelectAll={selectAll}
+            onDeselectAll={deselectAll}
+          />
+          {caps?.llm_available && planResp.plan.api_calls > 0 && (
+            <div className="flex items-center gap-3 sticky bottom-0 bg-neutral-950/95 -mx-6 px-6 py-3 border-t border-neutral-800">
+              <button
+                onClick={startRun}
+                disabled={selectedKeys.length === 0}
+                className="px-4 py-2 rounded border border-neutral-200 bg-neutral-100 text-neutral-900 text-sm font-medium hover:bg-white disabled:opacity-30"
+              >
+                Run analysis on {selectedKeys.length} selected
+              </button>
+              <button
+                onClick={refreshPlan}
+                className="px-4 py-2 rounded border border-neutral-700 text-sm hover:border-neutral-500"
+              >
+                Refresh
+              </button>
+            </div>
+          )}
+        </>
       )}
 
       {runError && <ErrorBox message={runError} />}
-      {jobId && job && <JobProgress job={job} onReset={() => { setJobId(null); setJob(null); void refreshPlan(); }} />}
+      {jobId && job && (
+        <JobProgress
+          job={job}
+          projectDir={projectDir}
+          rate={planResp?.plan.prices ?? null}
+          onReset={() => {
+            setJobId(null);
+            setJob(null);
+            void refreshPlan();
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+function CandidateList({
+  candidates,
+  selected,
+  onToggle,
+  onSelectAll,
+  onDeselectAll,
+}: {
+  candidates: AnalyzeCandidate[];
+  selected: Set<string>;
+  onToggle: (key: string) => void;
+  onSelectAll: () => void;
+  onDeselectAll: () => void;
+}) {
+  if (candidates.length === 0) return null;
+  return (
+    <section className="rounded border border-neutral-800 bg-neutral-900/40 overflow-hidden">
+      <header className="flex items-center justify-between px-4 py-2 border-b border-neutral-800 bg-neutral-900/60">
+        <div className="text-xs text-neutral-400">
+          <span className="font-semibold text-neutral-200">
+            {selected.size}/{candidates.length}
+          </span>{" "}
+          selected
+        </div>
+        <div className="flex gap-2 text-xs">
+          <button
+            onClick={onSelectAll}
+            className="px-2 py-0.5 rounded border border-neutral-700 hover:border-neutral-500"
+          >
+            All
+          </button>
+          <button
+            onClick={onDeselectAll}
+            className="px-2 py-0.5 rounded border border-neutral-700 hover:border-neutral-500"
+          >
+            None
+          </button>
+        </div>
+      </header>
+      <ul className="divide-y divide-neutral-800 max-h-[480px] overflow-y-auto">
+        {candidates.map((c) => {
+          const checked = selected.has(c.source_key);
+          return (
+            <li key={c.source_key}>
+              <label
+                className={`flex items-start gap-3 px-4 py-2.5 cursor-pointer hover:bg-neutral-900/60 ${
+                  checked ? "" : "opacity-50"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => onToggle(c.source_key)}
+                  className="mt-1 accent-neutral-200"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm text-neutral-100 truncate">
+                    {c.display_label ?? <span className="italic text-neutral-500">untitled session</span>}
+                  </div>
+                  <div className="text-[11px] text-neutral-500 font-mono flex items-center gap-1.5 flex-wrap mt-0.5">
+                    <span>{shortSessionId(c.session_id)}</span>
+                    {c.kind === "subagent" && (
+                      <span className="px-1 rounded bg-amber-950/60 text-amber-300 text-[10px]">subagent</span>
+                    )}
+                    {c.display_label_source && c.display_label_source !== "summary" && (
+                      <span className="px-1 rounded bg-neutral-800 text-neutral-400 text-[10px]">
+                        {c.display_label_source.replace("_", " ")}
+                      </span>
+                    )}
+                    <span className="text-neutral-600">·</span>
+                    <span>{relTime(c.started_at)}</span>
+                    {c.user_message_count !== null && (
+                      <>
+                        <span className="text-neutral-600">·</span>
+                        <span>{c.user_message_count} user msgs</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+                <div className="text-[11px] text-neutral-500 tabular-nums shrink-0 mt-1">
+                  ≈{formatNumber(c.est_input_tokens)} tok
+                </div>
+              </label>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 
@@ -184,7 +325,16 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function PlanCard({ plan }: { plan: AnalyzePlan }) {
+function PlanCard({ plan, selected }: { plan: AnalyzePlan; selected: Set<string> | null }) {
+  const sel = selected ?? new Set(plan.candidates.map((c) => c.source_key));
+  const chosen = plan.candidates.filter((c) => sel.has(c.source_key));
+  const selInputTokens = chosen.reduce((acc, c) => acc + c.est_input_tokens, 0);
+  const selOutputTokens = chosen.length * plan.est_output_tokens_per_call;
+  const selCost = plan.prices
+    ? (selInputTokens * plan.prices.input_per_mtok + selOutputTokens * plan.prices.output_per_mtok) /
+      1_000_000
+    : null;
+
   return (
     <section className="rounded border border-neutral-800 bg-neutral-900/40 p-4 space-y-3">
       <div className="flex items-center gap-2">
@@ -200,13 +350,13 @@ function PlanCard({ plan }: { plan: AnalyzePlan }) {
 
       {plan.api_calls > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-          <Stat label="Sessions" value={formatNumber(plan.api_calls)} />
-          <Stat label="API calls" value={formatNumber(plan.api_calls)} />
-          <Stat label="≈ Input tokens" value={formatNumber(plan.est_input_tokens)} />
-          <Stat label="≈ Output tokens" value={formatNumber(plan.est_output_tokens)} />
+          <Stat label="Selected" value={`${chosen.length} / ${plan.candidates.length}`} />
+          <Stat label="API calls" value={formatNumber(chosen.length)} />
+          <Stat label="≈ Input tokens" value={formatNumber(selInputTokens)} />
+          <Stat label="≈ Output tokens" value={formatNumber(selOutputTokens)} />
           <Stat
             label="≈ Cost"
-            value={plan.est_cost_usd === null ? "unknown" : `$${plan.est_cost_usd.toFixed(4)}`}
+            value={selCost === null ? "unknown" : `$${selCost.toFixed(4)}`}
             highlight
           />
           <Stat
@@ -257,14 +407,28 @@ function Stat({
   );
 }
 
-function JobProgress({ job, onReset }: { job: AnalyzeJob; onReset: () => void }) {
+function JobProgress({
+  job,
+  onReset,
+  projectDir,
+  rate,
+}: {
+  job: AnalyzeJob;
+  onReset: () => void;
+  projectDir?: string;
+  rate: { input_per_mtok: number; output_per_mtok: number } | null;
+}) {
   const pct = job.total === 0 ? 0 : Math.floor((job.processed / job.total) * 100);
   const done = job.status === "done" || job.status === "error";
+  const actualCost = rate
+    ? (job.total_input_tokens * rate.input_per_mtok + job.total_output_tokens * rate.output_per_mtok) / 1_000_000
+    : null;
+
   return (
     <section className="rounded border border-neutral-800 bg-neutral-900/40 p-4 space-y-3">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-200">
-          Job {job.id.slice(0, 8)}
+          {done && job.status === "done" ? "Analysis complete" : "Running analysis"}
         </h2>
         <span
           className={[
@@ -292,40 +456,69 @@ function JobProgress({ job, onReset }: { job: AnalyzeJob; onReset: () => void })
         </div>
       </div>
 
-      <div className="text-xs text-neutral-400">
-        Tokens used so far: <span className="text-neutral-200">{formatNumber(job.total_input_tokens)}</span> in / <span className="text-neutral-200">{formatNumber(job.total_output_tokens)}</span> out
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+        <Stat label="Input tokens" value={formatNumber(job.total_input_tokens)} small />
+        <Stat label="Output tokens" value={formatNumber(job.total_output_tokens)} small />
+        <Stat
+          label={done ? "Actual cost" : "Cost so far"}
+          value={actualCost === null ? "—" : `$${actualCost.toFixed(4)}`}
+          small
+          highlight
+        />
       </div>
 
       {job.error && <ErrorBox message={job.error} />}
 
+      {done && (
+        <div className="flex gap-2 pt-1">
+          {projectDir && (
+            <Link
+              to={`/p?dir=${encodeURIComponent(projectDir)}`}
+              className="px-3 py-1.5 rounded border border-neutral-200 bg-neutral-100 text-neutral-900 text-xs font-medium hover:bg-white"
+            >
+              View summaries in project →
+            </Link>
+          )}
+          <button
+            onClick={onReset}
+            className="px-3 py-1.5 rounded border border-neutral-700 text-xs hover:border-neutral-500"
+          >
+            Analyze more
+          </button>
+        </div>
+      )}
+
       {job.results.length > 0 && (
-        <details className="text-xs">
-          <summary className="cursor-pointer text-neutral-400 hover:text-neutral-200">
-            Per-session results ({job.results.length})
-          </summary>
-          <ul className="mt-2 space-y-1">
-            {job.results.slice(-50).reverse().map((r) => (
-              <li key={r.source_key} className="flex gap-2 items-start">
-                <span className={r.status === "ok" ? "text-emerald-400" : "text-red-400"}>
-                  {r.status === "ok" ? "✓" : "✗"}
-                </span>
-                <span className="font-mono text-[11px] text-neutral-500 truncate">{r.source_key}</span>
-                <span className="ml-auto text-neutral-300 truncate max-w-[40%]">
-                  {r.error ? r.error : r.one_liner ?? "—"}
-                </span>
+        <div>
+          <div className="text-[11px] uppercase tracking-wide text-neutral-500 mb-1.5 mt-2">
+            Per-session results
+          </div>
+          <ul className="divide-y divide-neutral-800 rounded border border-neutral-800 overflow-hidden">
+            {[...job.results].reverse().map((r) => (
+              <li key={r.source_key}>
+                <Link
+                  to={`/s?key=${encodeURIComponent(r.source_key)}`}
+                  className="flex gap-2 items-start px-3 py-2 hover:bg-neutral-900/60 text-xs"
+                >
+                  <span className={`mt-0.5 ${r.status === "ok" ? "text-emerald-400" : "text-red-400"}`}>
+                    {r.status === "ok" ? "✓" : "✗"}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-neutral-100 truncate">
+                      {r.error ? <span className="text-red-300">{r.error}</span> : r.one_liner ?? "—"}
+                    </div>
+                    <div className="font-mono text-[10px] text-neutral-500 truncate">{r.source_key}</div>
+                  </div>
+                  {r.status === "ok" && (
+                    <span className="text-neutral-500 tabular-nums shrink-0">
+                      {r.input_tokens}/{r.output_tokens}
+                    </span>
+                  )}
+                </Link>
               </li>
             ))}
           </ul>
-        </details>
-      )}
-
-      {done && (
-        <button
-          onClick={onReset}
-          className="px-3 py-1.5 rounded border border-neutral-700 text-xs hover:border-neutral-500"
-        >
-          Done — analyze more
-        </button>
+        </div>
       )}
     </section>
   );
