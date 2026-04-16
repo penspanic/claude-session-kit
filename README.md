@@ -114,9 +114,12 @@ Current tools:
 
 | Tool | Description |
 | --- | --- |
-| `csk_backup_status` | Returns the most recent backup run, host/user, and total session count. |
+| `csk_backup_status` | Most recent backup run, host/user, and session totals. |
+| `csk_list_sessions` | List sessions with parsed metadata. Filter by project, host, kind, date range, pagination. |
+| `csk_get_session` | Fetch a single session by `source_key`, with parsed details. |
+| `csk_recent` | Per-project session counts over the last N days. |
 
-More tools coming in subsequent releases (session search, summarization, pattern detection).
+More tools coming (FTS search, LLM summarization, pattern detection).
 
 ## Configuration reference
 

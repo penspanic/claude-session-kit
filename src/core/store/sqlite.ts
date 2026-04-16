@@ -1,55 +1,19 @@
 import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import type { SessionStore } from "./index.js";
+import type {
+  RecentProjectStats,
+  SessionStore,
+  SessionWithDetails,
+} from "./index.js";
 import type {
   BackupRun,
+  SessionDetailsRecord,
   SessionFilter,
   SessionKind,
   SessionRecord,
 } from "../types.js";
-
-const SCHEMA = `
-CREATE TABLE IF NOT EXISTS backup_runs (
-  id              INTEGER PRIMARY KEY AUTOINCREMENT,
-  host_id         TEXT    NOT NULL,
-  user_id         TEXT    NOT NULL,
-  started_at      TEXT    NOT NULL,
-  finished_at     TEXT,
-  files_scanned   INTEGER NOT NULL DEFAULT 0,
-  files_copied    INTEGER NOT NULL DEFAULT 0,
-  bytes_copied    INTEGER NOT NULL DEFAULT 0,
-  status          TEXT    NOT NULL,
-  error_message   TEXT
-);
-
-CREATE INDEX IF NOT EXISTS idx_backup_runs_host_started
-  ON backup_runs (host_id, started_at DESC);
-
-CREATE TABLE IF NOT EXISTS sessions (
-  source_key         TEXT    NOT NULL,
-  host_id            TEXT    NOT NULL,
-  user_id            TEXT    NOT NULL,
-  project_dir        TEXT    NOT NULL,
-  session_id         TEXT    NOT NULL,
-  parent_session_id  TEXT,
-  kind               TEXT    NOT NULL,
-  file_size          INTEGER NOT NULL,
-  file_mtime         TEXT    NOT NULL,
-  first_seen_at      TEXT    NOT NULL,
-  last_seen_at       TEXT    NOT NULL,
-  PRIMARY KEY (source_key, host_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_sessions_project_last_seen
-  ON sessions (project_dir, last_seen_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_sessions_host_user
-  ON sessions (host_id, user_id);
-
-CREATE INDEX IF NOT EXISTS idx_sessions_parent
-  ON sessions (parent_session_id);
-`;
+import { migrate } from "./migrations/index.js";
 
 interface BackupRunRow {
   id: number;
@@ -78,6 +42,28 @@ interface SessionRow {
   last_seen_at: string;
 }
 
+interface SessionDetailsRow {
+  source_key: string;
+  host_id: string;
+  started_at: string | null;
+  ended_at: string | null;
+  message_count: number;
+  user_message_count: number;
+  assistant_message_count: number;
+  tool_use_count: number;
+  tool_names: string | null;
+  model: string | null;
+  cwd: string | null;
+  git_branch: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_tokens: number;
+  cache_read_tokens: number;
+  parse_error_count: number;
+  parsed_at: string;
+  parsed_for_mtime: string;
+}
+
 export class SqliteStore implements SessionStore {
   private db: Database.Database;
 
@@ -89,7 +75,7 @@ export class SqliteStore implements SessionStore {
   }
 
   init(): void {
-    this.db.exec(SCHEMA);
+    migrate(this.db);
   }
 
   close(): void {
@@ -176,7 +162,7 @@ export class SqliteStore implements SessionStore {
     const { sql, params } = this.buildSessionQuery(filter);
     return (
       this.db
-        .prepare(`SELECT * FROM sessions ${sql} ORDER BY last_seen_at DESC`)
+        .prepare(`SELECT s.* FROM sessions s ${sql} ORDER BY s.last_seen_at DESC`)
         .all(...params) as SessionRow[]
     ).map((r) => this.rowToSession(r));
   }
@@ -184,7 +170,7 @@ export class SqliteStore implements SessionStore {
   countSessions(filter: SessionFilter = {}): number {
     const { sql, params } = this.buildSessionQuery(filter);
     const row = this.db
-      .prepare(`SELECT COUNT(*) as n FROM sessions ${sql}`)
+      .prepare(`SELECT COUNT(*) as n FROM sessions s ${sql}`)
       .get(...params) as { n: number };
     return row.n;
   }
@@ -193,27 +179,27 @@ export class SqliteStore implements SessionStore {
     const where: string[] = [];
     const params: unknown[] = [];
     if (filter.host_id) {
-      where.push("host_id = ?");
+      where.push("s.host_id = ?");
       params.push(filter.host_id);
     }
     if (filter.user_id) {
-      where.push("user_id = ?");
+      where.push("s.user_id = ?");
       params.push(filter.user_id);
     }
     if (filter.project_dir) {
-      where.push("project_dir = ?");
+      where.push("s.project_dir = ?");
       params.push(filter.project_dir);
     }
     if (filter.kind) {
-      where.push("kind = ?");
+      where.push("s.kind = ?");
       params.push(filter.kind);
     }
     if (filter.since) {
-      where.push("last_seen_at >= ?");
+      where.push("s.last_seen_at >= ?");
       params.push(filter.since);
     }
     if (filter.until) {
-      where.push("last_seen_at <= ?");
+      where.push("s.last_seen_at <= ?");
       params.push(filter.until);
     }
     const sql = where.length ? `WHERE ${where.join(" AND ")}` : "";
@@ -232,6 +218,191 @@ export class SqliteStore implements SessionStore {
       bytes_copied: row.bytes_copied,
       status: row.status as BackupRun["status"],
       error_message: row.error_message,
+    };
+  }
+
+  upsertSessionDetails(details: SessionDetailsRecord): void {
+    this.db
+      .prepare(`
+        INSERT INTO session_details (
+          source_key, host_id, started_at, ended_at,
+          message_count, user_message_count, assistant_message_count,
+          tool_use_count, tool_names, model, cwd, git_branch,
+          input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
+          parse_error_count, parsed_at, parsed_for_mtime
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (source_key, host_id) DO UPDATE SET
+          started_at              = excluded.started_at,
+          ended_at                = excluded.ended_at,
+          message_count           = excluded.message_count,
+          user_message_count      = excluded.user_message_count,
+          assistant_message_count = excluded.assistant_message_count,
+          tool_use_count          = excluded.tool_use_count,
+          tool_names              = excluded.tool_names,
+          model                   = excluded.model,
+          cwd                     = excluded.cwd,
+          git_branch              = excluded.git_branch,
+          input_tokens            = excluded.input_tokens,
+          output_tokens           = excluded.output_tokens,
+          cache_creation_tokens   = excluded.cache_creation_tokens,
+          cache_read_tokens       = excluded.cache_read_tokens,
+          parse_error_count       = excluded.parse_error_count,
+          parsed_at               = excluded.parsed_at,
+          parsed_for_mtime        = excluded.parsed_for_mtime
+      `)
+      .run(
+        details.source_key,
+        details.host_id,
+        details.started_at,
+        details.ended_at,
+        details.message_count,
+        details.user_message_count,
+        details.assistant_message_count,
+        details.tool_use_count,
+        JSON.stringify(details.tool_names),
+        details.model,
+        details.cwd,
+        details.git_branch,
+        details.input_tokens,
+        details.output_tokens,
+        details.cache_creation_tokens,
+        details.cache_read_tokens,
+        details.parse_error_count,
+        details.parsed_at,
+        details.parsed_for_mtime,
+      );
+  }
+
+  getSessionDetails(sourceKey: string, hostId: string): SessionDetailsRecord | null {
+    const row = this.db
+      .prepare(`SELECT * FROM session_details WHERE source_key = ? AND host_id = ?`)
+      .get(sourceKey, hostId) as SessionDetailsRow | undefined;
+    return row ? this.rowToDetails(row) : null;
+  }
+
+  listSessionsWithDetails(
+    filter: SessionFilter & { limit?: number; offset?: number } = {},
+  ): SessionWithDetails[] {
+    const { sql, params } = this.buildSessionQuery(filter);
+    const limit = filter.limit ?? 50;
+    const offset = filter.offset ?? 0;
+
+    const rows = this.db
+      .prepare(`
+        SELECT
+          s.*,
+          d.started_at              AS d_started_at,
+          d.ended_at                AS d_ended_at,
+          d.message_count           AS d_message_count,
+          d.user_message_count      AS d_user_message_count,
+          d.assistant_message_count AS d_assistant_message_count,
+          d.tool_use_count          AS d_tool_use_count,
+          d.tool_names              AS d_tool_names,
+          d.model                   AS d_model,
+          d.cwd                     AS d_cwd,
+          d.git_branch              AS d_git_branch,
+          d.input_tokens            AS d_input_tokens,
+          d.output_tokens           AS d_output_tokens,
+          d.cache_creation_tokens   AS d_cache_creation_tokens,
+          d.cache_read_tokens       AS d_cache_read_tokens,
+          d.parse_error_count       AS d_parse_error_count,
+          d.parsed_at               AS d_parsed_at,
+          d.parsed_for_mtime        AS d_parsed_for_mtime
+        FROM sessions s
+        LEFT JOIN session_details d
+          ON s.source_key = d.source_key AND s.host_id = d.host_id
+        ${sql.replace(/^WHERE /i, "WHERE ")}
+        ORDER BY COALESCE(d.started_at, s.last_seen_at) DESC
+        LIMIT ? OFFSET ?
+      `)
+      .all(...params, limit, offset) as Array<
+        SessionRow & Record<string, unknown>
+      >;
+
+    return rows.map((row) => ({
+      session: this.rowToSession(row),
+      details: row.d_parsed_at
+        ? this.rowToDetails(this.projectDetailRow(row))
+        : null,
+    }));
+  }
+
+  recentSessionStats(days: number, hostId?: string): RecentProjectStats[] {
+    const since = new Date(Date.now() - days * 86_400_000).toISOString();
+    const where = hostId ? `AND s.host_id = ?` : "";
+    const params: unknown[] = [since];
+    if (hostId) params.push(hostId);
+
+    return this.db
+      .prepare(`
+        SELECT
+          s.project_dir                                AS project_dir,
+          COUNT(*)                                     AS session_count,
+          MAX(COALESCE(d.started_at, s.last_seen_at))  AS last_active_at
+        FROM sessions s
+        LEFT JOIN session_details d
+          ON s.source_key = d.source_key AND s.host_id = d.host_id
+        WHERE COALESCE(d.started_at, s.last_seen_at) >= ? ${where}
+        GROUP BY s.project_dir
+        ORDER BY last_active_at DESC
+      `)
+      .all(...params) as RecentProjectStats[];
+  }
+
+  private projectDetailRow(row: Record<string, unknown>): SessionDetailsRow {
+    return {
+      source_key: row.source_key as string,
+      host_id: row.host_id as string,
+      started_at: row.d_started_at as string | null,
+      ended_at: row.d_ended_at as string | null,
+      message_count: row.d_message_count as number,
+      user_message_count: row.d_user_message_count as number,
+      assistant_message_count: row.d_assistant_message_count as number,
+      tool_use_count: row.d_tool_use_count as number,
+      tool_names: row.d_tool_names as string | null,
+      model: row.d_model as string | null,
+      cwd: row.d_cwd as string | null,
+      git_branch: row.d_git_branch as string | null,
+      input_tokens: row.d_input_tokens as number,
+      output_tokens: row.d_output_tokens as number,
+      cache_creation_tokens: row.d_cache_creation_tokens as number,
+      cache_read_tokens: row.d_cache_read_tokens as number,
+      parse_error_count: row.d_parse_error_count as number,
+      parsed_at: row.d_parsed_at as string,
+      parsed_for_mtime: row.d_parsed_for_mtime as string,
+    };
+  }
+
+  countParsedSessions(hostId?: string): number {
+    const sql = hostId
+      ? `SELECT COUNT(*) AS n FROM session_details WHERE host_id = ?`
+      : `SELECT COUNT(*) AS n FROM session_details`;
+    const stmt = this.db.prepare(sql);
+    const row = (hostId ? stmt.get(hostId) : stmt.get()) as { n: number };
+    return row.n;
+  }
+
+  private rowToDetails(row: SessionDetailsRow): SessionDetailsRecord {
+    return {
+      source_key: row.source_key,
+      host_id: row.host_id,
+      started_at: row.started_at,
+      ended_at: row.ended_at,
+      message_count: row.message_count,
+      user_message_count: row.user_message_count,
+      assistant_message_count: row.assistant_message_count,
+      tool_use_count: row.tool_use_count,
+      tool_names: row.tool_names ? (JSON.parse(row.tool_names) as string[]) : [],
+      model: row.model,
+      cwd: row.cwd,
+      git_branch: row.git_branch,
+      input_tokens: row.input_tokens,
+      output_tokens: row.output_tokens,
+      cache_creation_tokens: row.cache_creation_tokens,
+      cache_read_tokens: row.cache_read_tokens,
+      parse_error_count: row.parse_error_count,
+      parsed_at: row.parsed_at,
+      parsed_for_mtime: row.parsed_for_mtime,
     };
   }
 

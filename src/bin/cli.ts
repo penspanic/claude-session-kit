@@ -24,7 +24,7 @@ program
       const result = await runBackup(config, store, blob);
       const mb = (result.bytesCopied / 1024 / 1024).toFixed(2);
       console.log(
-        `[${result.status}] scanned=${result.filesScanned} copied=${result.filesCopied} skipped=${result.filesSkipped} indexed=${result.sessionsIndexed} bytes=${mb}MB duration=${result.durationMs}ms`,
+        `[${result.status}] scanned=${result.filesScanned} copied=${result.filesCopied} skipped=${result.filesSkipped} indexed=${result.sessionsIndexed} parsed=${result.sessionsParsed} bytes=${mb}MB duration=${result.durationMs}ms`,
       );
       if (result.errorMessage) console.error(result.errorMessage);
       process.exit(result.status === "success" ? 0 : 1);
@@ -64,7 +64,8 @@ program
       console.log(`  copied    : ${last.files_copied}`);
       console.log(`  bytes     : ${(last.bytes_copied / 1024 / 1024).toFixed(2)} MB`);
       if (last.error_message) console.log(`  error     : ${last.error_message}`);
-      console.log(`Sessions in index: ${totalSessions}`);
+      const parsedSessions = await store.countParsedSessions(opts.host);
+      console.log(`Sessions in index: ${totalSessions} (parsed: ${parsedSessions})`);
       console.log(`Blob backend: ${describeBlob(config)}`);
     } finally {
       await store.close();

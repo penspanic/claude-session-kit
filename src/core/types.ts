@@ -41,3 +41,25 @@ export interface SessionFilter {
   since?: string;
   until?: string;
 }
+
+export interface SessionDetailsRecord {
+  source_key: string;
+  host_id: string;
+  started_at: string | null;
+  ended_at: string | null;
+  message_count: number;
+  user_message_count: number;
+  assistant_message_count: number;
+  tool_use_count: number;
+  tool_names: string[];
+  model: string | null;
+  cwd: string | null;
+  git_branch: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_tokens: number;
+  cache_read_tokens: number;
+  parse_error_count: number;
+  parsed_at: string;
+  parsed_for_mtime: string;
+}
