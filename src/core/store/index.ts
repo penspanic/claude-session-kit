@@ -5,6 +5,7 @@ import type {
   SessionDetailsRecord,
   SessionFilter,
   SessionRecord,
+  SessionSummaryRecord,
   UserMessageRecord,
 } from "../types.js";
 import { SqliteStore } from "./sqlite.js";
@@ -71,6 +72,36 @@ export interface SessionStore {
     until?: string;
     limit?: number;
   }): SearchHit[] | Promise<SearchHit[]>;
+
+  /** Fetch all user messages for one session, ordered by seq. */
+  getUserMessages(
+    sourceKey: string,
+    hostId: string,
+  ): UserMessageRecord[] | Promise<UserMessageRecord[]>;
+
+  upsertSessionSummary(
+    summary: SessionSummaryRecord,
+  ): void | Promise<void>;
+
+  getSessionSummary(
+    sourceKey: string,
+    hostId: string,
+  ): SessionSummaryRecord | null | Promise<SessionSummaryRecord | null>;
+
+  /**
+   * List sessions that have parsed details but no summary (or a summary whose
+   * `generated_for_mtime` predates the parsed details' `parsed_for_mtime`).
+   * Useful for `csk analyze` to find what still needs work.
+   */
+  listUnanalyzedSessions(filter: {
+    host_id?: string;
+    project_dir?: string;
+    since?: string;
+    limit?: number;
+  }): SessionRecord[] | Promise<SessionRecord[]>;
+
+  /** Count summaries in the store. */
+  countSummaries(hostId?: string): number | Promise<number>;
 }
 
 export interface SessionWithDetails {

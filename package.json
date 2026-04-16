@@ -42,6 +42,7 @@
     "prepublishOnly": "npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.90.0",
     "@modelcontextprotocol/sdk": "^1.0.4",
     "better-sqlite3": "^11.5.0",
     "commander": "^12.1.0"

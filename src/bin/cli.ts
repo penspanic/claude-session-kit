@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 import { Command } from "commander";
+import { summarizeSession } from "../core/analyze.js";
+import { AnthropicClient } from "../core/anthropic.js";
 import { runBackup } from "../core/backup.js";
 import { createBlob } from "../core/blob/index.js";
 import { RcloneBlobStore } from "../core/blob/rclone.js";
 import { loadConfig } from "../core/config.js";
 import { createStore } from "../core/store/index.js";
+import type { SessionSummaryRecord } from "../core/types.js";
 
 const program = new Command();
 program
@@ -65,8 +68,98 @@ program
       console.log(`  bytes     : ${(last.bytes_copied / 1024 / 1024).toFixed(2)} MB`);
       if (last.error_message) console.log(`  error     : ${last.error_message}`);
       const parsedSessions = await store.countParsedSessions(opts.host);
-      console.log(`Sessions in index: ${totalSessions} (parsed: ${parsedSessions})`);
+      const summarized = await store.countSummaries(opts.host);
+      console.log(
+        `Sessions in index: ${totalSessions} (parsed: ${parsedSessions}, summarized: ${summarized})`,
+      );
       console.log(`Blob backend: ${describeBlob(config)}`);
+    } finally {
+      await store.close();
+    }
+  });
+
+program
+  .command("analyze")
+  .description("Generate LLM summaries for parsed sessions (requires ANTHROPIC_API_KEY)")
+  .option("--limit <n>", "Max sessions to summarize in this run", (v) => Number.parseInt(v, 10), 25)
+  .option("--project <dir>", "Only analyze sessions in this project_dir")
+  .option("--host <id>", "Only analyze sessions from this host_id")
+  .option("--since <iso>", "Only analyze sessions active since this ISO timestamp")
+  .option("--dry-run", "List candidate sessions without calling the LLM")
+  .option("--model <name>", "Anthropic model id (default: claude-haiku-4-5-20251001)")
+  .action(async (opts: {
+    limit: number;
+    project?: string;
+    host?: string;
+    since?: string;
+    dryRun?: boolean;
+    model?: string;
+  }) => {
+    const config = loadConfig();
+    const store = createStore(config);
+    await store.init();
+    try {
+      const candidates = await store.listUnanalyzedSessions({
+        host_id: opts.host ?? config.hostId,
+        project_dir: opts.project,
+        since: opts.since,
+        limit: opts.limit,
+      });
+
+      if (candidates.length === 0) {
+        console.log("Nothing to analyze. All sessions in range have fresh summaries.");
+        return;
+      }
+
+      if (opts.dryRun) {
+        console.log(`${candidates.length} session(s) would be summarized:`);
+        for (const s of candidates) console.log(`  ${s.source_key}`);
+        return;
+      }
+
+      const client = new AnthropicClient({ model: opts.model });
+      let ok = 0;
+      let failed = 0;
+      let totalIn = 0;
+      let totalOut = 0;
+
+      for (const [i, session] of candidates.entries()) {
+        const details = await store.getSessionDetails(session.source_key, session.host_id);
+        if (!details) continue;
+        const userMessages = await store.getUserMessages(session.source_key, session.host_id);
+
+        process.stdout.write(`[${i + 1}/${candidates.length}] ${session.source_key} ... `);
+        try {
+          const { summary, model, usage } = await summarizeSession(
+            { session, details, userMessages },
+            client,
+          );
+          const record: SessionSummaryRecord = {
+            source_key: session.source_key,
+            host_id: session.host_id,
+            one_liner: summary.one_liner,
+            summary,
+            tags: summary.tags,
+            model,
+            input_tokens: usage.input_tokens,
+            output_tokens: usage.output_tokens,
+            generated_at: new Date().toISOString(),
+            generated_for_mtime: details.parsed_for_mtime,
+          };
+          await store.upsertSessionSummary(record);
+          ok += 1;
+          totalIn += usage.input_tokens;
+          totalOut += usage.output_tokens;
+          console.log(`ok (in=${usage.input_tokens} out=${usage.output_tokens})`);
+        } catch (err) {
+          failed += 1;
+          console.log(`FAIL: ${(err as Error).message}`);
+        }
+      }
+
+      console.log(
+        `\nDone: ok=${ok} failed=${failed} tokens=${totalIn}in/${totalOut}out`,
+      );
     } finally {
       await store.close();
     }

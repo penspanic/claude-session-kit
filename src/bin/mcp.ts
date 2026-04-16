@@ -2,8 +2,11 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { summarizeSession } from "../core/analyze.js";
+import { AnthropicClient } from "../core/anthropic.js";
 import { loadConfig } from "../core/config.js";
 import { createStore } from "../core/store/index.js";
+import type { SessionSummaryRecord } from "../core/types.js";
 
 async function main() {
   const config = loadConfig();
@@ -134,6 +137,115 @@ async function main() {
       const stats = await store.recentSessionStats(days, args.host);
       const totalSessions = stats.reduce((a, s) => a + s.session_count, 0);
       return textContent({ days, totalSessions, projects: stats });
+    },
+  );
+
+  server.registerTool(
+    "csk_summarize",
+    {
+      description:
+        "Return the LLM-generated summary for a session. If the session has no cached summary (or its source mtime has changed since generation) and `force` is true, generate a fresh summary via the Anthropic API — requires ANTHROPIC_API_KEY to be set in the MCP server's environment.",
+      inputSchema: {
+        source_key: z.string().describe("Session source_key."),
+        host: z.string().optional().describe("host_id. Defaults to this machine's host_id."),
+        force: z
+          .boolean()
+          .optional()
+          .describe("Regenerate even if a fresh summary is cached (costs API credit)."),
+      },
+    },
+    async (args) => {
+      const hostId = args.host ?? config.hostId;
+      const details = await store.getSessionDetails(args.source_key, hostId);
+      if (!details) {
+        return textContent({
+          found: false,
+          reason: "No parsed details exist for this session. Run `csk backup` first.",
+        });
+      }
+
+      const cached = await store.getSessionSummary(args.source_key, hostId);
+      const isFresh = cached && cached.generated_for_mtime === details.parsed_for_mtime;
+      if (cached && isFresh && !args.force) {
+        return textContent({ source: "cache", ...cached });
+      }
+
+      const apiKey = process.env.ANTHROPIC_API_KEY;
+      if (!apiKey) {
+        if (cached) {
+          return textContent({ source: "cache (stale)", ...cached });
+        }
+        return textContent({
+          found: false,
+          reason:
+            "No cached summary and ANTHROPIC_API_KEY is not set — cannot generate. Set the key and retry, or run `csk analyze` first.",
+        });
+      }
+
+      const sessions = await store.listSessions({ host_id: hostId });
+      const session = sessions.find((s) => s.source_key === args.source_key);
+      if (!session) {
+        return textContent({ found: false, reason: "Session not found in index." });
+      }
+
+      const userMessages = await store.getUserMessages(args.source_key, hostId);
+      const client = new AnthropicClient({ apiKey });
+      const { summary, model, usage } = await summarizeSession(
+        { session, details, userMessages },
+        client,
+      );
+      const record: SessionSummaryRecord = {
+        source_key: args.source_key,
+        host_id: hostId,
+        one_liner: summary.one_liner,
+        summary,
+        tags: summary.tags,
+        model,
+        input_tokens: usage.input_tokens,
+        output_tokens: usage.output_tokens,
+        generated_at: new Date().toISOString(),
+        generated_for_mtime: details.parsed_for_mtime,
+      };
+      await store.upsertSessionSummary(record);
+      return textContent({ source: "generated", ...record });
+    },
+  );
+
+  server.registerTool(
+    "csk_recap",
+    {
+      description:
+        "List LLM summaries over a date range, filtered by project. Use this to answer 'what did I do this week?' — returns one_liner + tags + blog_hooks per session, ordered by time.",
+      inputSchema: {
+        days: z.number().int().min(1).max(365).optional().describe("Lookback window (default 7)."),
+        project: z.string().optional().describe("Filter to one project_dir."),
+        host: z.string().optional().describe("Filter by host_id. Defaults to all hosts."),
+        limit: z.number().int().min(1).max(200).optional().describe("Max rows (default 50)."),
+      },
+    },
+    async (args) => {
+      const days = args.days ?? 7;
+      const since = new Date(Date.now() - days * 86_400_000).toISOString();
+      const rows = await store.listSessionsWithDetails({
+        host_id: args.host,
+        project_dir: args.project,
+        since,
+        limit: args.limit ?? 50,
+      });
+      const recap: Array<Record<string, unknown>> = [];
+      for (const { session, details } of rows) {
+        const summary = await store.getSessionSummary(session.source_key, session.host_id);
+        if (!summary) continue;
+        recap.push({
+          source_key: session.source_key,
+          project_dir: session.project_dir,
+          started_at: details?.started_at,
+          one_liner: summary.one_liner,
+          tags: summary.tags,
+          blog_hooks: summary.summary.blog_hooks,
+        });
+      }
+      return textContent({ days, count: recap.length, recap });
     },
   );
 
