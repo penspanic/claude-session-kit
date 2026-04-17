@@ -44,13 +44,21 @@ export function ProjectPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <Link to="/" className="text-xs text-neutral-500 hover:text-neutral-300">
-          ← Home
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <Link to="/" className="text-xs text-neutral-500 hover:text-neutral-300">
+            ← Home
+          </Link>
+          <h1 className="text-lg font-semibold mt-1">{shortProject(projectDir)}</h1>
+          <div className="text-xs text-neutral-500 break-all">{decodeProjectDir(projectDir)}</div>
+          <div className="text-[11px] text-neutral-600 mt-0.5">{projectDir}</div>
+        </div>
+        <Link
+          to={`/analyze?project=${encodeURIComponent(projectDir)}`}
+          className="shrink-0 px-3 py-1.5 rounded border border-neutral-700 text-xs hover:border-neutral-500 hover:bg-neutral-900"
+        >
+          Analyze →
         </Link>
-        <h1 className="text-lg font-semibold mt-1">{shortProject(projectDir)}</h1>
-        <div className="text-xs text-neutral-500 break-all">{decodeProjectDir(projectDir)}</div>
-        <div className="text-[11px] text-neutral-600 mt-0.5">{projectDir}</div>
       </div>
 
       {error && <ErrorBox message={error} />}

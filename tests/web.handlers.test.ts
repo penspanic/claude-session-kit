@@ -7,24 +7,88 @@ import type {
   SessionSummaryRecord,
   UserMessageRecord,
 } from "../src/core/types.js";
+import type { LLMClient, LLMResponse, SummarizePrompt } from "../src/core/analyze.js";
 import {
+  deleteAnalyzeKey,
+  getAnalyzeCapabilities,
+  getAnalyzeJob,
   getRecent,
   getSession,
   getSessions,
   getStats,
+  postAnalyzeKey,
+  postAnalyzePlan,
+  postAnalyzeRun,
   search,
   type HandlerContext,
 } from "../src/core/web/handlers.js";
+import { AnalyzeJobRegistry } from "../src/core/web/jobs.js";
 import { routeApi } from "../src/core/web/router.js";
 import { makeTempEnv } from "./helpers.js";
 
-function makeCtx(): { ctx: HandlerContext; store: SqliteStore } {
+class StubLLM implements LLMClient {
+  calls = 0;
+  fail = false;
+  async summarize(_p: SummarizePrompt): Promise<LLMResponse> {
+    this.calls += 1;
+    if (this.fail) throw new Error("stub failure");
+    return {
+      text: JSON.stringify({
+        one_liner: `summary #${this.calls}`,
+        what_tried: "x",
+        outcome: "y",
+        notable: [],
+        blog_hooks: [],
+        tags: ["t"],
+      }),
+      model: "claude-haiku-4-5-20251001",
+      usage: { input_tokens: 100, output_tokens: 50 },
+    };
+  }
+}
+
+function makeCtx(opts: { llmAvailable?: boolean; llm?: LLMClient; keySource?: "env" | "runtime" } = {}): {
+  ctx: HandlerContext;
+  store: SqliteStore;
+  llm: LLMClient;
+  runtime: { apiKey: string | null; source: "env" | "runtime" | null };
+} {
   const env = makeTempEnv();
   const store = new SqliteStore(env.config.store.path);
   store.init();
+  const llm = opts.llm ?? new StubLLM();
+  const available = opts.llmAvailable ?? true;
+  const runtime = {
+    apiKey: available ? "sk-test-1234" : null,
+    source: (available ? opts.keySource ?? "runtime" : null) as "env" | "runtime" | null,
+  };
   return {
     store,
-    ctx: { store, hostId: "h1", userId: "u1", dataDir: env.dataDir },
+    llm,
+    runtime,
+    ctx: {
+      store,
+      hostId: "h1",
+      userId: "u1",
+      dataDir: env.dataDir,
+      jobs: new AnalyzeJobRegistry(),
+      llmAvailable: () => runtime.apiKey !== null,
+      apiKeySource: () => runtime.source,
+      apiKeyPreview: () => runtime.apiKey?.slice(-4) ?? null,
+      setApiKey: (k) => {
+        if (!k.startsWith("sk-")) return { ok: false, reason: "bad prefix" };
+        runtime.apiKey = k;
+        runtime.source = "runtime";
+        return { ok: true };
+      },
+      clearApiKey: () => {
+        if (runtime.source === "env") return false;
+        runtime.apiKey = null;
+        runtime.source = null;
+        return true;
+      },
+      makeLLMClient: () => llm,
+    },
   };
 }
 
@@ -271,11 +335,167 @@ describe("search", () => {
   });
 });
 
-describe("routeApi", () => {
-  it("rejects non-GET methods", async () => {
+describe("analyze: capabilities + plan", () => {
+  it("getAnalyzeCapabilities reports llm flag and suggested models", async () => {
+    const { ctx, store } = makeCtx({ llmAvailable: false });
+    const out = await getAnalyzeCapabilities(ctx);
+    expect(out.llm_available).toBe(false);
+    expect(out.api_key_source).toBeNull();
+    expect(out.api_key_preview).toBeNull();
+    expect(out.suggested_models.length).toBeGreaterThan(0);
+    expect(out.default_model).toMatch(/^claude-/);
+    store.close();
+  });
+
+  it("getAnalyzeCapabilities surfaces key source and preview when set", async () => {
+    const { ctx, store } = makeCtx({ llmAvailable: true, keySource: "env" });
+    const out = await getAnalyzeCapabilities(ctx);
+    expect(out.llm_available).toBe(true);
+    expect(out.api_key_source).toBe("env");
+    expect(out.api_key_preview).toBe("1234");
+    store.close();
+  });
+
+  it("postAnalyzeKey rejects non-sk- prefix", async () => {
+    const { ctx, store } = makeCtx({ llmAvailable: false });
+    const out = await postAnalyzeKey(ctx, { api_key: "wrong-prefix" });
+    expect(out.ok).toBe(false);
+    expect(ctx.llmAvailable()).toBe(false);
+    store.close();
+  });
+
+  it("postAnalyzeKey accepts a well-formed key and flips llmAvailable", async () => {
+    const { ctx, store } = makeCtx({ llmAvailable: false });
+    const out = await postAnalyzeKey(ctx, { api_key: "sk-ant-test-abcd" });
+    expect(out.ok).toBe(true);
+    expect(ctx.llmAvailable()).toBe(true);
+    expect(ctx.apiKeyPreview()).toBe("abcd");
+    expect(ctx.apiKeySource()).toBe("runtime");
+    store.close();
+  });
+
+  it("deleteAnalyzeKey clears a runtime key", async () => {
+    const { ctx, store } = makeCtx({ llmAvailable: true, keySource: "runtime" });
+    const out = await deleteAnalyzeKey(ctx);
+    expect(out.ok).toBe(true);
+    expect(ctx.llmAvailable()).toBe(false);
+    store.close();
+  });
+
+  it("deleteAnalyzeKey refuses to clear an env-set key", async () => {
+    const { ctx, store } = makeCtx({ llmAvailable: true, keySource: "env" });
+    const out = await deleteAnalyzeKey(ctx);
+    expect(out.ok).toBe(false);
+    expect(ctx.llmAvailable()).toBe(true);
+    store.close();
+  });
+
+  it("postAnalyzePlan returns estimate based on candidates", async () => {
+    const { ctx, store } = makeCtx({ llmAvailable: true });
+    store.upsertSession(sess({ source_key: "a.jsonl", session_id: "a" }));
+    store.upsertSessionDetails(details({ source_key: "a.jsonl", user_message_count: 4 }));
+    store.upsertSession(sess({ source_key: "b.jsonl", session_id: "b" }));
+    store.upsertSessionDetails(details({ source_key: "b.jsonl", user_message_count: 8 }));
+
+    const out = await postAnalyzePlan(ctx, { model: "claude-haiku-4-5" });
+    expect(out.plan.api_calls).toBe(2);
+    expect(out.plan.model_known).toBe(true);
+    expect(out.plan.est_input_tokens).toBeGreaterThan(0);
+    expect(out.plan.est_output_tokens).toBe(2 * 500);
+    expect(out.plan.est_cost_usd).toBeGreaterThan(0);
+    expect(out.plan.prices).toEqual({ input_per_mtok: 1, output_per_mtok: 5 });
+    store.close();
+  });
+
+  it("postAnalyzePlan returns null cost for unknown model", async () => {
     const { ctx, store } = makeCtx();
-    const res = await routeApi(ctx, { method: "POST", path: "/api/stats", query: {} });
+    store.upsertSession(sess({ source_key: "a.jsonl", session_id: "a" }));
+    store.upsertSessionDetails(details({ source_key: "a.jsonl" }));
+    const out = await postAnalyzePlan(ctx, { model: "not-a-model" });
+    expect(out.plan.model_known).toBe(false);
+    expect(out.plan.est_cost_usd).toBeNull();
+    store.close();
+  });
+
+  it("postAnalyzeRun refuses when no API key", async () => {
+    const { ctx, store } = makeCtx({ llmAvailable: false });
+    const out = await postAnalyzeRun(ctx, {});
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.reason).toMatch(/ANTHROPIC_API_KEY/);
+    store.close();
+  });
+
+  it("postAnalyzeRun starts a job and runs it to completion", async () => {
+    const { ctx, store, llm } = makeCtx();
+    store.upsertSession(sess({ source_key: "a.jsonl", session_id: "a" }));
+    store.upsertSessionDetails(details({ source_key: "a.jsonl" }));
+    store.upsertSession(sess({ source_key: "b.jsonl", session_id: "b" }));
+    store.upsertSessionDetails(details({ source_key: "b.jsonl" }));
+
+    const out = await postAnalyzeRun(ctx, {});
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+
+    // Wait briefly for the async job to drain. Stub LLM resolves on next tick.
+    for (let i = 0; i < 50; i += 1) {
+      const probe = await getAnalyzeJob(ctx, out.job_id);
+      if (probe.job?.status === "done") break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+
+    const finished = await getAnalyzeJob(ctx, out.job_id);
+    expect(finished.found).toBe(true);
+    expect(finished.job?.status).toBe("done");
+    expect(finished.job?.processed).toBe(2);
+    expect(finished.job?.ok).toBe(2);
+    expect(finished.job?.failed).toBe(0);
+    expect(finished.job?.total_input_tokens).toBe(200);
+    expect(finished.job?.total_output_tokens).toBe(100);
+
+    // Stub got called twice and summary rows landed in the store.
+    expect((llm as StubLLM).calls).toBe(2);
+    expect(store.getSessionSummary("a.jsonl", "h1")?.one_liner).toMatch(/^summary #/);
+    expect(store.getSessionSummary("b.jsonl", "h1")?.one_liner).toMatch(/^summary #/);
+    store.close();
+  });
+
+  it("postAnalyzeRun records per-session failures without aborting", async () => {
+    const llm = new StubLLM();
+    llm.fail = true;
+    const { ctx, store } = makeCtx({ llm });
+    store.upsertSession(sess({ source_key: "a.jsonl", session_id: "a" }));
+    store.upsertSessionDetails(details({ source_key: "a.jsonl" }));
+
+    const out = await postAnalyzeRun(ctx, {});
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+
+    for (let i = 0; i < 50; i += 1) {
+      const probe = await getAnalyzeJob(ctx, out.job_id);
+      if (probe.job?.status === "done") break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    const finished = await getAnalyzeJob(ctx, out.job_id);
+    expect(finished.job?.status).toBe("done");
+    expect(finished.job?.ok).toBe(0);
+    expect(finished.job?.failed).toBe(1);
+    expect(finished.job?.results[0]?.error).toMatch(/stub failure/);
+    store.close();
+  });
+});
+
+describe("routeApi", () => {
+  it("rejects non-GET/POST/DELETE methods", async () => {
+    const { ctx, store } = makeCtx();
+    const res = await routeApi(ctx, { method: "PUT", path: "/api/stats", query: {} });
     expect(res.status).toBe(405);
+    store.close();
+  });
+
+  it("returns 404 for POST to an unknown api path", async () => {
+    const { ctx, store } = makeCtx();
+    const res = await routeApi(ctx, { method: "POST", path: "/api/no-such-thing", query: {} });
+    expect(res.status).toBe(404);
     store.close();
   });
 

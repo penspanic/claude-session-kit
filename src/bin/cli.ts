@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { Command } from "commander";
-import { summarizeSession } from "../core/analyze.js";
+import { createInterface } from "node:readline/promises";
+import { stdin as input, stdout as output } from "node:process";
+import { DEFAULT_ANALYZE_MODEL, planAnalyzeRun, summarizeSession } from "../core/analyze.js";
 import { AnthropicClient } from "../core/anthropic.js";
 import { runBackup } from "../core/backup.js";
 import { createBlob } from "../core/blob/index.js";
@@ -86,52 +88,71 @@ program
   .option("--project <dir>", "Only analyze sessions in this project_dir")
   .option("--host <id>", "Only analyze sessions from this host_id")
   .option("--since <iso>", "Only analyze sessions active since this ISO timestamp")
-  .option("--dry-run", "List candidate sessions without calling the LLM")
-  .option("--model <name>", "Anthropic model id (default: claude-haiku-4-5-20251001)")
+  .option("--dry-run", "Show the plan and exit without calling the LLM")
+  .option("-y, --yes", "Skip the interactive cost confirmation")
+  .option("--model <name>", `Anthropic model id (default: ${DEFAULT_ANALYZE_MODEL})`)
   .action(async (opts: {
     limit: number;
     project?: string;
     host?: string;
     since?: string;
     dryRun?: boolean;
+    yes?: boolean;
     model?: string;
   }) => {
     const config = loadConfig();
     const store = createStore(config);
     await store.init();
     try {
-      const candidates = await store.listUnanalyzedSessions({
-        host_id: opts.host ?? config.hostId,
-        project_dir: opts.project,
-        since: opts.since,
-        limit: opts.limit,
-      });
+      const model = opts.model ?? DEFAULT_ANALYZE_MODEL;
+      const plan = await planAnalyzeRun(
+        store,
+        {
+          host_id: opts.host ?? config.hostId,
+          project_dir: opts.project,
+          since: opts.since,
+          limit: opts.limit,
+        },
+        model,
+      );
 
-      if (candidates.length === 0) {
+      if (plan.candidates.length === 0) {
         console.log("Nothing to analyze. All sessions in range have fresh summaries.");
         return;
       }
 
-      if (opts.dryRun) {
-        console.log(`${candidates.length} session(s) would be summarized:`);
-        for (const s of candidates) console.log(`  ${s.source_key}`);
-        return;
+      printPlan(plan);
+
+      if (opts.dryRun) return;
+
+      const interactive = !opts.yes && input.isTTY;
+      if (interactive) {
+        const rl = createInterface({ input, output });
+        try {
+          const answer = (await rl.question("\nProceed? [y/N] ")).trim().toLowerCase();
+          if (answer !== "y" && answer !== "yes") {
+            console.log("Aborted.");
+            return;
+          }
+        } finally {
+          rl.close();
+        }
       }
 
-      const client = new AnthropicClient({ model: opts.model });
+      const client = new AnthropicClient({ model });
       let ok = 0;
       let failed = 0;
       let totalIn = 0;
       let totalOut = 0;
 
-      for (const [i, session] of candidates.entries()) {
+      for (const [i, session] of plan.candidates.entries()) {
         const details = await store.getSessionDetails(session.source_key, session.host_id);
         if (!details) continue;
         const userMessages = await store.getUserMessages(session.source_key, session.host_id);
 
-        process.stdout.write(`[${i + 1}/${candidates.length}] ${session.source_key} ... `);
+        process.stdout.write(`[${i + 1}/${plan.candidates.length}] ${session.source_key} ... `);
         try {
-          const { summary, model, usage } = await summarizeSession(
+          const { summary, model: usedModel, usage } = await summarizeSession(
             { session, details, userMessages },
             client,
           );
@@ -141,7 +162,7 @@ program
             one_liner: summary.one_liner,
             summary,
             tags: summary.tags,
-            model,
+            model: usedModel,
             input_tokens: usage.input_tokens,
             output_tokens: usage.output_tokens,
             generated_at: new Date().toISOString(),
@@ -165,6 +186,25 @@ program
       await store.close();
     }
   });
+
+function printPlan(plan: Awaited<ReturnType<typeof planAnalyzeRun>>): void {
+  const fmtTok = (n: number) => n.toLocaleString();
+  const cost = plan.est_cost_usd === null
+    ? "unknown (model not in price table)"
+    : `$${plan.est_cost_usd.toFixed(4)} USD`;
+
+  console.log("Analyze plan (estimate):");
+  console.log(`  model      : ${plan.model}${plan.model_known ? "" : " — unknown to price table"}`);
+  console.log(`  candidates : ${plan.api_calls} session(s) → ${plan.api_calls} API call(s)`);
+  console.log(`  ~tokens    : ${fmtTok(plan.est_input_tokens)} in / ${fmtTok(plan.est_output_tokens)} out`);
+  if (plan.prices) {
+    console.log(
+      `  rate       : $${plan.prices.input_per_mtok}/MTok in, $${plan.prices.output_per_mtok}/MTok out`,
+    );
+  }
+  console.log(`  est. cost  : ${cost}`);
+  console.log(`  note       : ${plan.notes}`);
+}
 
 program
   .command("serve")
