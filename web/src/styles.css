@@ -2,13 +2,53 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Semantic color tokens. Values are RGB triplets (no "rgb(...)") so Tailwind's
+ * <alpha-value> placeholder works — see tailwind.config.js extend.colors.
+ *
+ * Contrast targets:
+ *   text       >= 7:1 on bg   (WCAG AAA)
+ *   text-dim   >= 4.5:1       (AA normal)
+ *   text-faint >= 3:1         (AA large / fine for meta text only)
+ */
+
 :root {
+  color-scheme: light;
+  --bg: 255 255 255;
+  --bg-elev: 250 250 249;
+  --bg-sunk: 244 244 242;
+  --bg-hover: 235 235 232;
+  --text: 23 23 23;          /* neutral-900 */
+  --text-dim: 82 82 82;      /* neutral-600 */
+  --text-faint: 115 115 115; /* neutral-500 */
+  --border: 228 228 226;
+  --border-strong: 200 200 197;
+  --accent: 23 23 23;
+  --accent-text: 250 250 249;
+}
+
+.dark {
   color-scheme: dark;
+  --bg: 10 10 10;             /* neutral-950 */
+  --bg-elev: 23 23 23;        /* neutral-900 */
+  --bg-sunk: 38 38 38;        /* neutral-800 */
+  --bg-hover: 55 55 55;       /* neutral-700 */
+  --text: 245 245 245;        /* neutral-100 */
+  --text-dim: 212 212 212;    /* neutral-300 — much brighter than before */
+  --text-faint: 163 163 163;  /* neutral-400 — was neutral-500, bumped for readability */
+  --border: 64 64 64;         /* neutral-700 */
+  --border-strong: 82 82 82;  /* neutral-600 */
+  --accent: 245 245 245;
+  --accent-text: 23 23 23;
 }
 
 mark {
-  background-color: rgb(250 204 21 / 0.3);
+  background-color: rgb(250 204 21 / 0.35);
   color: inherit;
   padding: 0 2px;
   border-radius: 2px;
+}
+
+.dark mark {
+  background-color: rgb(250 204 21 / 0.25);
 }

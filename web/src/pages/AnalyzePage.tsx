@@ -122,20 +122,20 @@ export function AnalyzePage() {
     <div className="space-y-6 max-w-3xl">
       <div>
         {projectDir ? (
-          <Link to={`/p?dir=${encodeURIComponent(projectDir)}`} className="text-xs text-neutral-500 hover:text-neutral-300">
+          <Link to={`/p?dir=${encodeURIComponent(projectDir)}`} className="text-xs text-faint hover:text-dim">
             ← {shortProject(projectDir)}
           </Link>
         ) : (
-          <Link to="/" className="text-xs text-neutral-500 hover:text-neutral-300">← Home</Link>
+          <Link to="/" className="text-xs text-faint hover:text-dim">← Home</Link>
         )}
         <h1 className="text-lg font-semibold mt-1">Analyze sessions</h1>
-        <p className="text-sm text-neutral-400 mt-1">
+        <p className="text-sm text-dim mt-1">
           Generate LLM summaries for sessions that don't have one yet
           {projectDir && (
             <>
               {" in "}
-              <span className="text-neutral-200">{shortProject(projectDir)}</span>
-              <span className="text-neutral-600 ml-1 text-xs">({decodeProjectDir(projectDir)})</span>
+              <span className="text-text">{shortProject(projectDir)}</span>
+              <span className="text-faint ml-1 text-xs">({decodeProjectDir(projectDir)})</span>
             </>
           )}
           .
@@ -152,13 +152,13 @@ export function AnalyzePage() {
         />
       )}
 
-      <section className="rounded border border-neutral-800 bg-neutral-900/40 p-4 space-y-4">
+      <section className="rounded border border-border bg-bg-elev/60 p-4 space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Field label="Model">
             <select
               value={model}
               onChange={(e) => setModel(e.target.value)}
-              className="w-full rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm"
+              className="w-full rounded border border-border-strong bg-bg-elev px-3 py-2 text-sm"
             >
               {caps?.suggested_models.map((m) => (
                 <option key={m.id} value={m.id}>{m.label}</option>
@@ -172,7 +172,7 @@ export function AnalyzePage() {
               max={200}
               value={limit}
               onChange={(e) => setLimit(Math.max(1, Math.min(200, Number.parseInt(e.target.value, 10) || 1)))}
-              className="w-full rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm"
+              className="w-full rounded border border-border-strong bg-bg-elev px-3 py-2 text-sm"
             />
           </Field>
           <Field label='Language (e.g. "auto", "en", "한국어")'>
@@ -181,7 +181,7 @@ export function AnalyzePage() {
               value={language}
               onChange={(e) => setLanguage(e.target.value)}
               placeholder="auto"
-              className="w-full rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm font-mono"
+              className="w-full rounded border border-border-strong bg-bg-elev px-3 py-2 text-sm font-mono"
             />
           </Field>
         </div>
@@ -201,17 +201,17 @@ export function AnalyzePage() {
             onDeselectAll={deselectAll}
           />
           {caps?.llm_available && planResp.plan.api_calls > 0 && (
-            <div className="flex items-center gap-3 sticky bottom-0 bg-neutral-950/95 -mx-6 px-6 py-3 border-t border-neutral-800">
+            <div className="flex items-center gap-3 sticky bottom-0 bg-bg/95 -mx-6 px-6 py-3 border-t border-border">
               <button
                 onClick={startRun}
                 disabled={selectedKeys.length === 0}
-                className="px-4 py-2 rounded border border-neutral-200 bg-neutral-100 text-neutral-900 text-sm font-medium hover:bg-white disabled:opacity-30"
+                className="px-4 py-2 rounded border border-accent bg-accent text-accent-text text-sm font-medium hover:opacity-90 disabled:opacity-30"
               >
                 Run analysis on {selectedKeys.length} selected
               </button>
               <button
                 onClick={refreshPlan}
-                className="px-4 py-2 rounded border border-neutral-700 text-sm hover:border-neutral-500"
+                className="px-4 py-2 rounded border border-border-strong text-sm hover:border-border-strong"
               >
                 Refresh
               </button>
@@ -252,10 +252,10 @@ function CandidateList({
 }) {
   if (candidates.length === 0) return null;
   return (
-    <section className="rounded border border-neutral-800 bg-neutral-900/40 overflow-hidden">
-      <header className="flex items-center justify-between px-4 py-2 border-b border-neutral-800 bg-neutral-900/60">
-        <div className="text-xs text-neutral-400">
-          <span className="font-semibold text-neutral-200">
+    <section className="rounded border border-border bg-bg-elev/60 overflow-hidden">
+      <header className="flex items-center justify-between px-4 py-2 border-b border-border bg-bg-elev/80">
+        <div className="text-xs text-dim">
+          <span className="font-semibold text-text">
             {selected.size}/{candidates.length}
           </span>{" "}
           selected
@@ -263,25 +263,25 @@ function CandidateList({
         <div className="flex gap-2 text-xs">
           <button
             onClick={onSelectAll}
-            className="px-2 py-0.5 rounded border border-neutral-700 hover:border-neutral-500"
+            className="px-2 py-0.5 rounded border border-border-strong hover:border-border-strong"
           >
             All
           </button>
           <button
             onClick={onDeselectAll}
-            className="px-2 py-0.5 rounded border border-neutral-700 hover:border-neutral-500"
+            className="px-2 py-0.5 rounded border border-border-strong hover:border-border-strong"
           >
             None
           </button>
         </div>
       </header>
-      <ul className="divide-y divide-neutral-800 max-h-[480px] overflow-y-auto">
+      <ul className="divide-y divide-border max-h-[480px] overflow-y-auto">
         {candidates.map((c) => {
           const checked = selected.has(c.source_key);
           return (
             <li key={c.source_key}>
               <label
-                className={`flex items-start gap-3 px-4 py-2.5 cursor-pointer hover:bg-neutral-900/60 ${
+                className={`flex items-start gap-3 px-4 py-2.5 cursor-pointer hover:bg-bg-elev/80 ${
                   checked ? "" : "opacity-50"
                 }`}
               >
@@ -289,33 +289,33 @@ function CandidateList({
                   type="checkbox"
                   checked={checked}
                   onChange={() => onToggle(c.source_key)}
-                  className="mt-1 accent-neutral-200"
+                  className="mt-1 accent-accent"
                 />
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm text-neutral-100 truncate">
-                    {c.display_label ?? <span className="italic text-neutral-500">untitled session</span>}
+                  <div className="text-sm text-text truncate">
+                    {c.display_label ?? <span className="italic text-faint">untitled session</span>}
                   </div>
-                  <div className="text-[11px] text-neutral-500 font-mono flex items-center gap-1.5 flex-wrap mt-0.5">
+                  <div className="text-[11px] text-faint font-mono flex items-center gap-1.5 flex-wrap mt-0.5">
                     <span>{shortSessionId(c.session_id)}</span>
                     {c.kind === "subagent" && (
-                      <span className="px-1 rounded bg-amber-950/60 text-amber-300 text-[10px]">subagent</span>
+                      <span className="px-1 rounded bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300 text-[10px]">subagent</span>
                     )}
                     {c.display_label_source && c.display_label_source !== "summary" && (
-                      <span className="px-1 rounded bg-neutral-800 text-neutral-400 text-[10px]">
+                      <span className="px-1 rounded bg-bg-sunk text-dim text-[10px]">
                         {c.display_label_source.replace("_", " ")}
                       </span>
                     )}
-                    <span className="text-neutral-600">·</span>
+                    <span className="text-faint">·</span>
                     <span>{relTime(c.started_at)}</span>
                     {c.user_message_count !== null && (
                       <>
-                        <span className="text-neutral-600">·</span>
+                        <span className="text-faint">·</span>
                         <span>{c.user_message_count} user msgs</span>
                       </>
                     )}
                   </div>
                 </div>
-                <div className="text-[11px] text-neutral-500 tabular-nums shrink-0 mt-1">
+                <div className="text-[11px] text-faint tabular-nums shrink-0 mt-1">
                   ≈{formatNumber(c.est_input_tokens)} tok
                 </div>
               </label>
@@ -330,7 +330,7 @@ function CandidateList({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <div className="text-[10px] uppercase tracking-wide text-neutral-500 mb-1">{label}</div>
+      <div className="text-[10px] uppercase tracking-wide text-faint mb-1">{label}</div>
       {children}
     </label>
   );
@@ -347,14 +347,14 @@ function PlanCard({ plan, selected }: { plan: AnalyzePlan; selected: Set<string>
     : null;
 
   return (
-    <section className="rounded border border-neutral-800 bg-neutral-900/40 p-4 space-y-3">
+    <section className="rounded border border-border bg-bg-elev/60 p-4 space-y-3">
       <div className="flex items-center gap-2">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-200">Estimate</h2>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950/60 text-amber-300">추정치 · estimate</span>
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-text">Estimate</h2>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300">추정치 · estimate</span>
       </div>
 
       {plan.api_calls === 0 && (
-        <div className="text-sm text-neutral-400">
+        <div className="text-sm text-dim">
           Nothing to analyze in this scope — every session already has a fresh summary.
         </div>
       )}
@@ -383,7 +383,7 @@ function PlanCard({ plan, selected }: { plan: AnalyzePlan; selected: Set<string>
         </div>
       )}
 
-      <p className="text-[11px] text-neutral-500 leading-relaxed">{plan.notes}</p>
+      <p className="text-[11px] text-faint leading-relaxed">{plan.notes}</p>
     </section>
   );
 }
@@ -402,13 +402,13 @@ function Stat({
   mono?: boolean;
 }) {
   return (
-    <div className="rounded border border-neutral-800 bg-neutral-950/40 px-3 py-2">
-      <div className="text-[10px] uppercase tracking-wide text-neutral-500">{label}</div>
+    <div className="rounded border border-border bg-bg/40 px-3 py-2">
+      <div className="text-[10px] uppercase tracking-wide text-faint">{label}</div>
       <div
         className={[
           "mt-1",
           small ? "text-xs" : "text-base",
-          highlight ? "font-semibold text-amber-300" : "text-neutral-100",
+          highlight ? "font-semibold text-amber-700 dark:text-amber-300" : "text-text",
           mono ? "font-mono" : "",
         ].join(" ")}
       >
@@ -436,18 +436,18 @@ function JobProgress({
     : null;
 
   return (
-    <section className="rounded border border-neutral-800 bg-neutral-900/40 p-4 space-y-3">
+    <section className="rounded border border-border bg-bg-elev/60 p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-200">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-text">
           {done && job.status === "done" ? "Analysis complete" : "Running analysis"}
         </h2>
         <span
           className={[
             "px-2 py-0.5 rounded text-[11px]",
-            job.status === "done" ? "bg-emerald-950/60 text-emerald-300" : "",
-            job.status === "error" ? "bg-red-950/60 text-red-300" : "",
-            job.status === "running" ? "bg-blue-950/60 text-blue-300" : "",
-            job.status === "queued" ? "bg-neutral-800 text-neutral-300" : "",
+            job.status === "done" ? "bg-emerald-100 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300" : "",
+            job.status === "error" ? "bg-red-100 text-red-900 dark:bg-red-950/60 dark:text-red-300" : "",
+            job.status === "running" ? "bg-blue-100 text-blue-900 dark:bg-blue-950/60 dark:text-blue-300" : "",
+            job.status === "queued" ? "bg-bg-sunk text-dim" : "",
           ].join(" ")}
         >
           {job.status}
@@ -455,11 +455,11 @@ function JobProgress({
       </div>
 
       <div>
-        <div className="flex justify-between text-xs text-neutral-400 mb-1">
+        <div className="flex justify-between text-xs text-dim mb-1">
           <span>{job.processed} / {job.total} ({pct}%)</span>
           <span>ok={job.ok} · failed={job.failed}</span>
         </div>
-        <div className="h-2 bg-neutral-800 rounded overflow-hidden">
+        <div className="h-2 bg-bg-sunk rounded overflow-hidden">
           <div
             className={`h-full transition-all ${job.status === "error" ? "bg-red-400" : "bg-emerald-400"}`}
             style={{ width: `${pct}%` }}
@@ -485,14 +485,14 @@ function JobProgress({
           {projectDir && (
             <Link
               to={`/p?dir=${encodeURIComponent(projectDir)}`}
-              className="px-3 py-1.5 rounded border border-neutral-200 bg-neutral-100 text-neutral-900 text-xs font-medium hover:bg-white"
+              className="px-3 py-1.5 rounded border border-accent bg-accent text-accent-text text-xs font-medium hover:opacity-90"
             >
               View summaries in project →
             </Link>
           )}
           <button
             onClick={onReset}
-            className="px-3 py-1.5 rounded border border-neutral-700 text-xs hover:border-neutral-500"
+            className="px-3 py-1.5 rounded border border-border-strong text-xs hover:border-border-strong"
           >
             Analyze more
           </button>
@@ -501,27 +501,27 @@ function JobProgress({
 
       {job.results.length > 0 && (
         <div>
-          <div className="text-[11px] uppercase tracking-wide text-neutral-500 mb-1.5 mt-2">
+          <div className="text-[11px] uppercase tracking-wide text-faint mb-1.5 mt-2">
             Per-session results
           </div>
-          <ul className="divide-y divide-neutral-800 rounded border border-neutral-800 overflow-hidden">
+          <ul className="divide-y divide-border rounded border border-border overflow-hidden">
             {[...job.results].reverse().map((r) => (
               <li key={r.source_key}>
                 <Link
                   to={`/s?key=${encodeURIComponent(r.source_key)}`}
-                  className="flex gap-2 items-start px-3 py-2 hover:bg-neutral-900/60 text-xs"
+                  className="flex gap-2 items-start px-3 py-2 hover:bg-bg-elev/80 text-xs"
                 >
                   <span className={`mt-0.5 ${r.status === "ok" ? "text-emerald-400" : "text-red-400"}`}>
                     {r.status === "ok" ? "✓" : "✗"}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <div className="text-neutral-100 truncate">
-                      {r.error ? <span className="text-red-300">{r.error}</span> : r.one_liner ?? "—"}
+                    <div className="text-text truncate">
+                      {r.error ? <span className="text-red-700 dark:text-red-300">{r.error}</span> : r.one_liner ?? "—"}
                     </div>
-                    <div className="font-mono text-[10px] text-neutral-500 truncate">{r.source_key}</div>
+                    <div className="font-mono text-[10px] text-faint truncate">{r.source_key}</div>
                   </div>
                   {r.status === "ok" && (
-                    <span className="text-neutral-500 tabular-nums shrink-0">
+                    <span className="text-faint tabular-nums shrink-0">
                       {r.input_tokens}/{r.output_tokens}
                     </span>
                   )}
@@ -546,20 +546,20 @@ function ApiKeyBanner({
 
   if (caps.llm_available) {
     return (
-      <div className="rounded border border-emerald-900/60 bg-emerald-950/20 px-3 py-2 text-sm text-emerald-200 flex items-center gap-3 flex-wrap">
+      <div className="rounded border border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-200 px-3 py-2 text-sm flex items-center gap-3 flex-wrap">
         <span>
           API key active
           {caps.api_key_preview && (
-            <span className="ml-1 font-mono text-emerald-400">…{caps.api_key_preview}</span>
+            <span className="ml-1 font-mono text-emerald-700 dark:text-emerald-400">…{caps.api_key_preview}</span>
           )}
-          <span className="ml-1 text-emerald-500/80 text-xs">
+          <span className="ml-1 text-emerald-700/80 dark:text-emerald-500/80 text-xs">
             ({caps.api_key_source === "env" ? "from env" : "set in browser"})
           </span>
         </span>
         <div className="ml-auto flex gap-2 text-xs">
           <button
             onClick={() => setOpen(true)}
-            className="px-2 py-1 rounded border border-emerald-800/60 hover:border-emerald-500"
+            className="px-2 py-1 rounded border border-emerald-400 dark:border-emerald-800/60 hover:border-emerald-600 dark:hover:border-emerald-500"
           >
             Change
           </button>
@@ -570,7 +570,7 @@ function ApiKeyBanner({
                 await api.clearApiKey();
                 await onChanged();
               }}
-              className="px-2 py-1 rounded border border-emerald-800/60 hover:border-red-500 hover:text-red-300"
+              className="px-2 py-1 rounded border border-emerald-400 dark:border-emerald-800/60 hover:border-red-500 hover:text-red-700 dark:hover:text-red-300"
             >
               Clear
             </button>
@@ -590,11 +590,11 @@ function ApiKeyBanner({
   }
 
   return (
-    <div className="rounded border border-amber-900/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-200 flex items-center gap-3 flex-wrap">
+    <div className="rounded border border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200 px-3 py-2 text-sm flex items-center gap-3 flex-wrap">
       <span>No API key set — analysis is disabled.</span>
       <button
         onClick={() => setOpen(true)}
-        className="ml-auto px-3 py-1 rounded border border-amber-700 text-xs hover:border-amber-400"
+        className="ml-auto px-3 py-1 rounded border border-amber-500 dark:border-amber-700 text-xs hover:border-amber-700 dark:hover:border-amber-400"
       >
         Set API key
       </button>
@@ -638,13 +638,13 @@ function ApiKeyModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
       <form
         onSubmit={submit}
         onClick={(e) => e.stopPropagation()}
-        className="bg-neutral-900 border border-neutral-700 rounded-lg p-5 w-full max-w-md space-y-4"
+        className="bg-bg-elev border border-border-strong rounded-lg p-5 w-full max-w-md space-y-4"
       >
-        <h2 className="text-base font-semibold text-neutral-100">Set Anthropic API key</h2>
-        <p className="text-xs text-neutral-400 leading-relaxed">
+        <h2 className="text-base font-semibold text-text">Set Anthropic API key</h2>
+        <p className="text-xs text-dim leading-relaxed">
           Stored in this server process's memory only — not written to disk and lost when{" "}
-          <code className="text-neutral-300">csk serve</code> exits. For persistent setup, launch with{" "}
-          <code className="text-neutral-300">ANTHROPIC_API_KEY</code> set in the env.
+          <code className="text-dim">csk serve</code> exits. For persistent setup, launch with{" "}
+          <code className="text-dim">ANTHROPIC_API_KEY</code> set in the env.
         </p>
         <input
           autoFocus
@@ -652,21 +652,21 @@ function ApiKeyModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder="sk-ant-..."
-          className="w-full rounded border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm font-mono"
+          className="w-full rounded border border-border-strong bg-bg px-3 py-2 text-sm font-mono"
         />
         {error && <ErrorBox message={error} />}
         <div className="flex gap-2 justify-end">
           <button
             type="button"
             onClick={onClose}
-            className="px-3 py-1.5 rounded border border-neutral-700 text-sm hover:border-neutral-500"
+            className="px-3 py-1.5 rounded border border-border-strong text-sm hover:border-border-strong"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={busy || !value.trim()}
-            className="px-3 py-1.5 rounded border border-neutral-200 bg-neutral-100 text-neutral-900 text-sm font-medium disabled:opacity-30"
+            className="px-3 py-1.5 rounded border border-accent bg-accent text-accent-text text-sm font-medium disabled:opacity-30"
           >
             {busy ? "Saving…" : "Save"}
           </button>
