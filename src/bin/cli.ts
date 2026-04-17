@@ -5,7 +5,9 @@ import { stdin as input, stdout as output } from "node:process";
 import {
   CURRENT_SIGNALS_VERSION,
   DEFAULT_ANALYZE_MODEL,
+  DEFAULT_LANGUAGE,
   planAnalyzeRun,
+  resolveLanguage,
   summarizeSession,
 } from "../core/analyze.js";
 import { AnthropicClient } from "../core/anthropic.js";
@@ -103,6 +105,11 @@ program
   .option("--dry-run", "Show the plan and exit without calling the LLM")
   .option("-y, --yes", "Skip the interactive cost confirmation")
   .option("--model <name>", `Anthropic model id (default: ${DEFAULT_ANALYZE_MODEL})`)
+  .option(
+    "--lang <label>",
+    `Output language label passed to the LLM (e.g. "auto", "en", "한국어", "日本語"). Default: ${DEFAULT_LANGUAGE}`,
+    DEFAULT_LANGUAGE,
+  )
   .action(async (opts: {
     limit: number;
     project?: string;
@@ -111,12 +118,14 @@ program
     dryRun?: boolean;
     yes?: boolean;
     model?: string;
+    lang?: string;
   }) => {
     const config = loadConfig();
     const store = createStore(config);
     await store.init();
     try {
       const model = opts.model ?? DEFAULT_ANALYZE_MODEL;
+      const language = resolveLanguage(opts.lang);
       const plan = await planAnalyzeRun(
         store,
         {
@@ -165,7 +174,7 @@ program
         process.stdout.write(`[${i + 1}/${plan.candidates.length}] ${session.source_key} ... `);
         try {
           const { summary, model: usedModel, usage } = await summarizeSession(
-            { session, details, userMessages },
+            { session, details, userMessages, language },
             client,
           );
           const record: SessionSummaryRecord = {
@@ -270,6 +279,8 @@ const patternsCmd = program
     "Cross-session skill-gap detection. Two subcommands: `project` for a single project (or worktree group), `global` for cross-project habits.",
   );
 
+const LANG_FLAG_DESC = `Output language label passed to the LLM (e.g. "auto", "en", "한국어", "日本語"). Default: ${DEFAULT_LANGUAGE}`;
+
 patternsCmd
   .command("project")
   .description(
@@ -291,6 +302,7 @@ patternsCmd
   .option("--dry-run", "Show the plan and exit without calling the LLM")
   .option("-y, --yes", "Skip the interactive cost confirmation")
   .option("--model <name>", `Anthropic model id (default: ${DEFAULT_PATTERNS_MODEL})`)
+  .option("--lang <label>", LANG_FLAG_DESC, DEFAULT_LANGUAGE)
   .action(async (opts: {
     dir: string[];
     match?: string;
@@ -300,6 +312,7 @@ patternsCmd
     dryRun?: boolean;
     yes?: boolean;
     model?: string;
+    lang?: string;
   }) => {
     const config = loadConfig();
     const store = createStore(config);
@@ -327,6 +340,7 @@ patternsCmd
         since: opts.since,
         limit: opts.limit,
         model: opts.model ?? DEFAULT_PATTERNS_MODEL,
+        language: resolveLanguage(opts.lang),
         dryRun: opts.dryRun ?? false,
         yes: opts.yes ?? false,
       });
@@ -346,6 +360,7 @@ patternsCmd
   .option("--dry-run", "Show the plan and exit without calling the LLM")
   .option("-y, --yes", "Skip the interactive cost confirmation")
   .option("--model <name>", `Anthropic model id (default: ${DEFAULT_PATTERNS_MODEL})`)
+  .option("--lang <label>", LANG_FLAG_DESC, DEFAULT_LANGUAGE)
   .action(async (opts: {
     limit: number;
     host?: string;
@@ -353,6 +368,7 @@ patternsCmd
     dryRun?: boolean;
     yes?: boolean;
     model?: string;
+    lang?: string;
   }) => {
     const config = loadConfig();
     const store = createStore(config);
@@ -366,6 +382,7 @@ patternsCmd
         since: opts.since,
         limit: opts.limit,
         model: opts.model ?? DEFAULT_PATTERNS_MODEL,
+        language: resolveLanguage(opts.lang),
         dryRun: opts.dryRun ?? false,
         yes: opts.yes ?? false,
       });
@@ -386,10 +403,11 @@ async function runPatterns(args: {
   since?: string;
   limit: number;
   model: string;
+  language: string;
   dryRun: boolean;
   yes: boolean;
 }): Promise<void> {
-  const { store, scope, scopeProjectDirs, hostId, since, limit, model, dryRun, yes } = args;
+  const { store, scope, scopeProjectDirs, hostId, since, limit, model, language, dryRun, yes } = args;
 
   const plan = await planPatternsRun(
     store,
@@ -446,8 +464,8 @@ async function runPatterns(args: {
   const client = new AnthropicClient({ model, maxTokens: 8192 });
   const startedAt = new Date().toISOString();
   const runId = randomUUID();
-  process.stdout.write(`Running patterns detection on ${summaries.length} summaries (${scope}) ... `);
-  const result = await detectPatterns(summaries, client, { scope });
+  process.stdout.write(`Running patterns detection on ${summaries.length} summaries (${scope}, lang=${language}) ... `);
+  const result = await detectPatterns(summaries, client, { scope, language });
   const finishedAt = new Date().toISOString();
   console.log(
     `done. findings=${result.findings.length} tokens=${result.usage.input_tokens}in/${result.usage.output_tokens}out`,
@@ -467,6 +485,7 @@ async function runPatterns(args: {
       host_id: hostId,
       since: since ?? null,
       limit,
+      language,
     }),
     started_at: startedAt,
     finished_at: finishedAt,

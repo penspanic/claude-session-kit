@@ -68,6 +68,7 @@ export class AnalyzeJobRegistry {
     plan: AnalyzePlan;
     store: SessionStore;
     client: LLMClient;
+    language?: string;
   }): AnalyzeJob {
     const id = randomUUID();
     const job: AnalyzeJob = {
@@ -89,7 +90,7 @@ export class AnalyzeJobRegistry {
     this.jobs.set(id, job);
     this.evictIfNeeded();
 
-    void this.run(job, args.plan.candidates, args.store, args.client);
+    void this.run(job, args.plan.candidates, args.store, args.client, args.language);
     return job;
   }
 
@@ -108,6 +109,7 @@ export class AnalyzeJobRegistry {
     candidates: AnalyzeCandidate[],
     store: SessionStore,
     client: LLMClient,
+    language: string | undefined,
   ): Promise<void> {
     job.status = "running";
     job.started_at = new Date().toISOString();
@@ -132,7 +134,7 @@ export class AnalyzeJobRegistry {
           );
 
           const { summary, model: usedModel, usage } = await summarizeSession(
-            { session, details, userMessages },
+            { session, details, userMessages, language },
             client,
           );
 

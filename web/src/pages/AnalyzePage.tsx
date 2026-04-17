@@ -18,6 +18,7 @@ export function AnalyzePage() {
   const [caps, setCaps] = useState<AnalyzeCapabilities | null>(null);
   const [model, setModel] = useState<string>("");
   const [limit, setLimit] = useState<number>(25);
+  const [language, setLanguage] = useState<string>("auto");
   const [planResp, setPlanResp] = useState<AnalyzePlanResponse | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
   const [planning, setPlanning] = useState(false);
@@ -67,6 +68,7 @@ export function AnalyzePage() {
         project: projectDir,
         limit,
         model,
+        language,
         source_keys: selectedKeys,
       });
       setJobId(job_id);
@@ -151,7 +153,7 @@ export function AnalyzePage() {
       )}
 
       <section className="rounded border border-neutral-800 bg-neutral-900/40 p-4 space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Field label="Model">
             <select
               value={model}
@@ -171,6 +173,15 @@ export function AnalyzePage() {
               value={limit}
               onChange={(e) => setLimit(Math.max(1, Math.min(200, Number.parseInt(e.target.value, 10) || 1)))}
               className="w-full rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm"
+            />
+          </Field>
+          <Field label='Language (e.g. "auto", "en", "한국어")'>
+            <input
+              type="text"
+              value={language}
+              onChange={(e) => setLanguage(e.target.value)}
+              placeholder="auto"
+              className="w-full rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm font-mono"
             />
           </Field>
         </div>

@@ -1,4 +1,10 @@
-import { DEFAULT_ANALYZE_MODEL, planAnalyzeRun, type AnalyzePlan } from "../analyze.js";
+import {
+  DEFAULT_ANALYZE_MODEL,
+  DEFAULT_LANGUAGE,
+  planAnalyzeRun,
+  resolveLanguage,
+  type AnalyzePlan,
+} from "../analyze.js";
 import {
   DEFAULT_PATTERNS_BATCH,
   DEFAULT_PATTERNS_MODEL,
@@ -338,6 +344,8 @@ export interface AnalyzeRequestBody {
   since?: string;
   limit?: number;
   model?: string;
+  /** Opaque language label. Default "auto". */
+  language?: string;
   /**
    * Optional explicit selection. When present (and non-empty), Run analyzes
    * exactly these source_keys instead of re-deriving from the filter. The UI
@@ -463,6 +471,7 @@ export async function postAnalyzeRun(
     plan: { ...plan, candidates: chosen },
     store: ctx.store,
     client,
+    language: resolveLanguage(body.language),
   });
   return { ok: true, job_id: job.id };
 }
@@ -491,6 +500,8 @@ export interface PatternsRequestBody {
   since?: string;
   limit?: number;
   model?: string;
+  /** Opaque language label. Default "auto". */
+  language?: string;
 }
 
 export interface PatternsPlanResponse {
@@ -588,18 +599,21 @@ export async function postPatternsRun(
   const client = ctx.makeLLMClient(model, { maxTokens: 8192 });
   if (!client) return { ok: false, reason: "Failed to construct LLM client." };
 
+  const language = resolveLanguage(body.language);
   const job = ctx.patternsJobs.start({
     summaries,
     model,
     hostId,
     scope: v.scope,
     scopeProjectDirs: v.dirs ?? null,
+    language,
     filter: {
       scope: v.scope,
       project_dirs: v.dirs ?? null,
       host_id: hostId,
       since: body.since ?? null,
       limit,
+      language,
     },
     client,
     store: ctx.store,

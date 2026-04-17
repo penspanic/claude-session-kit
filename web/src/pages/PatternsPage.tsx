@@ -48,6 +48,7 @@ export function PatternsPage({ scope: fixedScope }: { scope?: "project" | "globa
   const [planning, setPlanning] = useState(false);
   const [model, setModel] = useState<string>("");
   const [limit, setLimit] = useState<number>(80);
+  const [language, setLanguage] = useState<string>("auto");
 
   const [runs, setRuns] = useState<PatternRun[] | null>(null);
   const [findings, setFindings] = useState<FindingRecord[] | null>(null);
@@ -165,6 +166,7 @@ export function PatternsPage({ scope: fixedScope }: { scope?: "project" | "globa
         project_dirs: scope === "project" ? selectedDirs : undefined,
         limit,
         model,
+        language,
       });
       setJobId(job_id);
     } catch (e) {
@@ -270,6 +272,8 @@ export function PatternsPage({ scope: fixedScope }: { scope?: "project" | "globa
           setModel={setModel}
           limit={limit}
           setLimit={setLimit}
+          language={language}
+          setLanguage={setLanguage}
           onRefresh={refreshPlan}
           onRun={startRun}
           planning={planning}
@@ -438,6 +442,8 @@ function PlanSection({
   setModel,
   limit,
   setLimit,
+  language,
+  setLanguage,
   onRefresh,
   onRun,
   planning,
@@ -453,6 +459,8 @@ function PlanSection({
   setModel: (m: string) => void;
   limit: number;
   setLimit: (n: number) => void;
+  language: string;
+  setLanguage: (l: string) => void;
   onRefresh: () => void;
   onRun: () => void;
   planning: boolean;
@@ -482,7 +490,7 @@ function PlanSection({
         />
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Field label="Model">
           <select
             value={model}
@@ -502,6 +510,15 @@ function PlanSection({
             value={limit}
             onChange={(e) => setLimit(Math.max(1, Math.min(200, Number.parseInt(e.target.value, 10) || 1)))}
             className="w-full rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm"
+          />
+        </Field>
+        <Field label='Language (e.g. "auto", "en", "한국어")'>
+          <input
+            type="text"
+            value={language}
+            onChange={(e) => setLanguage(e.target.value)}
+            placeholder="auto"
+            className="w-full rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm font-mono"
           />
         </Field>
       </div>

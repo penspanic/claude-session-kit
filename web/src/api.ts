@@ -220,6 +220,7 @@ export const api = {
     limit?: number;
     model?: string;
     host?: string;
+    language?: string;
     source_keys?: string[];
   }) => postJson<{ ok: true; job_id: string }>("/api/analyze/run", body),
   analyzeJob: (id: string) =>
@@ -312,6 +313,7 @@ export interface PatternsRequest {
   limit?: number;
   model?: string;
   host?: string;
+  language?: string;
 }
 
 export interface PatternsPlanCandidate {

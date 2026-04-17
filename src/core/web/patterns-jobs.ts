@@ -27,6 +27,7 @@ export interface StartPatternsJobArgs {
   hostId: string;
   scope: PatternScope;
   scopeProjectDirs: string[] | null;
+  language: string;
   filter: Record<string, unknown>;
   client: LLMClient;
   store: SessionStore;
@@ -87,7 +88,10 @@ export class PatternsJobRegistry {
     job.status = "running";
     job.started_at = new Date().toISOString();
     try {
-      const result = await detectPatterns(args.summaries, args.client, { scope: args.scope });
+      const result = await detectPatterns(args.summaries, args.client, {
+        scope: args.scope,
+        language: args.language,
+      });
       const runId = randomUUID();
       const finishedAt = new Date().toISOString();
       const run: PatternRunRecord = {

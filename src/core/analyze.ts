@@ -15,6 +15,34 @@ import type {
  */
 export const CURRENT_SIGNALS_VERSION = 1;
 
+/** Opaque language value. "auto" = match user's messages. Anything else is a
+ *  free-form label passed to the LLM ("en", "English", "ko", "한국어",
+ *  "日本語", "Français" — whatever the caller wants). No whitelist.
+ *  Default "auto" keeps behavior untouched when the option is omitted. */
+export const DEFAULT_LANGUAGE = "auto";
+
+/** Build the `Language: …` directive appended to system prompts. Empty / null
+ *  / "auto" produces the match-user-language instruction; anything else is
+ *  interpolated directly so users can say "respond in <X>" without the code
+ *  shipping a language table. */
+export function languageDirective(lang: string | undefined | null): string {
+  const norm = (lang ?? "").trim();
+  if (!norm || norm.toLowerCase() === "auto") {
+    return "Language: respond in the same primary language that dominates the user's messages in the provided data. Always keep code identifiers, file paths, and verbatim user quotes in their original form — do not translate them.";
+  }
+  return `Language: respond in ${norm}. Always keep code identifiers, file paths, and verbatim user quotes in their original language — do not translate them.`;
+}
+
+export function resolveLanguage(code: string | undefined | null): string {
+  const norm = (code ?? "").trim();
+  return norm || DEFAULT_LANGUAGE;
+}
+
+/** Summary-prompt overlay. Regardless of output language, these fields stay
+ *  English so cross-session clustering works. */
+export const ANALYZE_LANGUAGE_OVERLAY =
+  'Regardless of the chosen output language, these fields MUST stay in lowercase English tokens so they cluster across sessions: "tags", "intent". Also keep "corrections[].user_quote" verbatim from the user message (do not translate).';
+
 export interface LLMUsage {
   input_tokens: number;
   output_tokens: number;
@@ -44,6 +72,8 @@ export interface SummarizeInput {
   >;
   details: SessionDetailsRecord | null;
   userMessages: UserMessageRecord[];
+  /** Output language label. "auto" (default) or any free-form string passed to the LLM. */
+  language?: string;
 }
 
 export interface SummarizeResult {
@@ -85,7 +115,8 @@ export async function summarizeSession(
   client: LLMClient,
 ): Promise<SummarizeResult> {
   const prompt = buildPrompt(input);
-  const response = await client.summarize(prompt);
+  const system = `${prompt.system}\n\n${languageDirective(input.language)}\n${ANALYZE_LANGUAGE_OVERLAY}`;
+  const response = await client.summarize({ ...prompt, system });
   const summary = parseSummary(response.text);
   return {
     summary,

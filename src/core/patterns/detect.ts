@@ -1,7 +1,13 @@
+import { languageDirective } from "../analyze.js";
 import { estimateCost, normalizeModelId, priceFor } from "../pricing.js";
 import type { LLMClient, LLMUsage, SummarizePrompt } from "../analyze.js";
 import type { EnrichedSummary, SessionStore } from "../store/index.js";
 import type { Finding, FindingKind, PatternScope } from "../types.js";
+
+/** Overlay specific to patterns findings: cluster_key must stay English so
+ *  the same pattern across runs is recognizably the same cluster. */
+const PATTERNS_LANGUAGE_OVERLAY =
+  'Regardless of the chosen language, "cluster_key" MUST stay in lowercase English tokens (so the same pattern groups across runs). Always keep "evidence[].quote" verbatim from the source summaries — do not translate it.';
 
 /** Default model for `csk patterns`. Sonnet over Haiku because the
  * cross-session synthesis benefits from reasoning quality more than latency. */
@@ -34,6 +40,8 @@ const VALID_KINDS: FindingKind[] = [
 
 export interface DetectPatternsOptions {
   scope: PatternScope;
+  /** Output language label. "auto" (default) or any free-form string. */
+  language?: string;
   /** Maximum findings to request from the model. */
   maxFindings?: number;
 }
@@ -54,7 +62,8 @@ export async function detectPatterns(
     throw new Error("detectPatterns requires at least one enriched summary");
   }
   const prompt = buildPrompt(summaries, opts.scope, opts.maxFindings ?? 12);
-  const response = await client.summarize(prompt);
+  const system = `${prompt.system}\n\n${languageDirective(opts.language)}\n${PATTERNS_LANGUAGE_OVERLAY}`;
+  const response = await client.summarize({ ...prompt, system });
   const findings = parseFindings(response.text, summaries, opts.scope);
   return {
     findings,
