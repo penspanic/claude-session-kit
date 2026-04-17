@@ -694,11 +694,11 @@ function FindingsList({
         </div>
       )}
       {[...findingsByKind.entries()].map(([kind, list]) => (
-        <section key={kind} className="space-y-2">
-          <h3 className="text-xs uppercase tracking-wide text-faint">
+        <section key={kind} className="space-y-1.5">
+          <h3 className="text-[11px] uppercase tracking-wide text-faint">
             {KIND_LABELS[kind] ?? kind} · {list.length}
           </h3>
-          <ul className="space-y-2">
+          <ul className="space-y-1.5">
             {list.map((f) => (
               <FindingCard key={f.id} finding={f} />
             ))}
@@ -711,8 +711,9 @@ function FindingsList({
 
 function FindingCard({ finding }: { finding: FindingRecord }) {
   const accent = KIND_ACCENT[finding.kind] ?? "bg-bg-elev/80 text-dim border-border";
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
   return (
-    <li className="rounded border border-border bg-bg-elev/60 p-4 space-y-3">
+    <li className="rounded border border-border bg-bg-elev/60 px-3 py-2.5 space-y-2">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-2 min-w-0 flex-1">
           <span
@@ -720,7 +721,7 @@ function FindingCard({ finding }: { finding: FindingRecord }) {
           >
             {KIND_LABELS[finding.kind] ?? finding.kind}
           </span>
-          <h4 className="text-sm font-medium text-text break-words">
+          <h4 className="text-sm font-medium text-text break-words leading-snug">
             {finding.title}
           </h4>
         </div>
@@ -730,16 +731,20 @@ function FindingCard({ finding }: { finding: FindingRecord }) {
           </span>
         )}
       </div>
-      <p className="text-sm text-dim leading-relaxed">{finding.description}</p>
+      <p className="text-[13px] text-dim leading-snug">{finding.description}</p>
       {finding.suggested_remedy && (
-        <p className="text-sm text-amber-800 dark:text-amber-200/90 leading-relaxed">
+        <p className="text-[13px] text-amber-800 dark:text-amber-200/90 leading-snug">
           → {finding.suggested_remedy}
         </p>
       )}
-      <div className="pt-1 border-t border-border/60">
-        <div className="text-[10px] uppercase tracking-wide text-faint mb-1.5">
-          Evidence · {finding.evidence.length} sessions
-        </div>
+      <button
+        onClick={() => setEvidenceOpen((v) => !v)}
+        className="w-full flex items-center justify-between pt-1.5 border-t border-border/60 text-[10px] uppercase tracking-wide text-faint hover:text-dim"
+      >
+        <span>Evidence · {finding.evidence.length} sessions</span>
+        <span>{evidenceOpen ? "▾ hide" : "▸ show"}</span>
+      </button>
+      {evidenceOpen && (
         <ul className="space-y-1">
           {finding.evidence.map((e, i) => (
             <li key={`${e.source_key}-${i}`} className="text-xs">
@@ -755,7 +760,7 @@ function FindingCard({ finding }: { finding: FindingRecord }) {
             </li>
           ))}
         </ul>
-      </div>
+      )}
     </li>
   );
 }
