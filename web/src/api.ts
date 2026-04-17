@@ -232,4 +232,131 @@ export const api = {
     if (!res.ok || !json.ok) throw new Error(json.reason ?? `${res.status} ${res.statusText}`);
     return json as { ok: true };
   },
+  patternsPlan: (body: PatternsRequest) =>
+    postJson<PatternsPlanResponse>("/api/patterns/plan", body),
+  patternsRun: (body: PatternsRequest) =>
+    postJson<{ ok: true; job_id: string }>("/api/patterns/run", body),
+  patternsJob: (id: string) =>
+    getJson<{ found: boolean; job: PatternsJob | null }>(
+      `/api/patterns/jobs/${encodeURIComponent(id)}`,
+    ),
+  patternsRuns: (params: { scope?: "project" | "global"; project_dir?: string; limit?: number } = {}) =>
+    getJson<{ runs: PatternRun[] }>(`/api/patterns/runs${qs(params)}`),
+  patternsFindings: (params: { run_id?: string; kind?: string; limit?: number }) =>
+    getJson<{
+      run: PatternRun | null;
+      findings: FindingRecord[];
+      latest_run_id: string | null;
+    }>(`/api/patterns/findings${qs(params)}`),
+  patternsSources: (runId?: string) =>
+    getJson<{ run_id: string | null; sources: PatternRunSourceItem[] }>(
+      `/api/patterns/sources${qs({ run_id: runId })}`,
+    ),
 };
+
+export interface PatternRunSourceItem {
+  source_key: string;
+  host_id: string;
+  session_id: string;
+  project_dir: string;
+  kind: string;
+  parent_session_id: string | null;
+  started_at: string | null;
+  user_message_count: number | null;
+  one_liner: string | null;
+  tags: string[] | null;
+}
+
+export type FindingKind = "repetition" | "correction_pattern" | "friction" | "skill_gap";
+
+export interface FindingEvidence {
+  source_key: string;
+  host_id: string;
+  quote?: string;
+}
+
+export interface FindingRecord {
+  id: number;
+  run_id: string;
+  kind: FindingKind;
+  cluster_key?: string;
+  title: string;
+  description: string;
+  suggested_remedy?: string;
+  evidence: FindingEvidence[];
+  score?: number;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  generated_at: string;
+}
+
+export interface PatternRun {
+  run_id: string;
+  host_id: string;
+  model: string;
+  summary_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  finding_count: number;
+  filter_json: string | null;
+  started_at: string;
+  finished_at: string | null;
+  scope: "project" | "global" | null;
+  scope_project_dirs: string[] | null;
+}
+
+export interface PatternsRequest {
+  scope: "project" | "global";
+  project_dirs?: string[];
+  limit?: number;
+  model?: string;
+  host?: string;
+}
+
+export interface PatternsPlanCandidate {
+  source_key: string;
+  host_id: string;
+  project_dir: string;
+  session_id: string;
+  started_at: string | null;
+  one_liner: string;
+}
+
+export interface PatternsPlan {
+  model: string;
+  model_known: boolean;
+  summary_count: number;
+  est_input_tokens: number;
+  est_output_tokens: number;
+  est_cost_usd: number | null;
+  prices: { input_per_mtok: number; output_per_mtok: number } | null;
+  notes: string;
+  candidates: PatternsPlanCandidate[];
+}
+
+export interface PatternsPlanResponse {
+  plan: PatternsPlan;
+  scope: "project" | "global";
+  llm_available: boolean;
+  default_model: string;
+  suggested_models: Array<{ id: string; label: string }>;
+  total_enriched_summaries: number;
+  total_summaries: number;
+  projects: Array<{ project_dir: string; count: number }>;
+}
+
+export interface PatternsJob {
+  id: string;
+  status: "queued" | "running" | "done" | "error";
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  model: string;
+  summary_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  finding_count: number;
+  run_id: string | null;
+  error: string | null;
+}

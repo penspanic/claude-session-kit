@@ -1,6 +1,12 @@
 import type { Config } from "../config.js";
 import type {
   BackupRun,
+  Finding,
+  FindingKind,
+  FindingRecord,
+  PatternRunRecord,
+  PatternRunSource,
+  PatternScope,
   SearchHit,
   SessionDetailsRecord,
   SessionFilter,
@@ -112,6 +118,96 @@ export interface SessionStore {
 
   /** Count summaries in the store. */
   countSummaries(hostId?: string): number | Promise<number>;
+
+  /**
+   * Summaries eligible for cross-session pattern detection: only rows whose
+   * signals_version is at or above `minVersion` (default 1). Joined with
+   * project_dir + started_at for context.
+   */
+  listEnrichedSummaries(filter: {
+    host_id?: string;
+    project_dir?: string;
+    /** Multi-project filter. If both project_dir and project_dirs are given,
+     *  project_dirs wins. Project-mode patterns uses this to group worktrees. */
+    project_dirs?: string[];
+    since?: string;
+    limit?: number;
+    minVersion?: number;
+  }):
+    | EnrichedSummary[]
+    | Promise<EnrichedSummary[]>;
+
+  /** How many summaries are at or above the given signals_version. */
+  countEnrichedSummaries(args: {
+    host_id?: string;
+    project_dirs?: string[];
+    minVersion?: number;
+  }): number | Promise<number>;
+
+  /** Per-project breakdown of enriched-summary counts. Used by the project
+   *  patterns page to show the picker list (with counts alongside each). */
+  countEnrichedSummariesByProject(args: {
+    host_id?: string;
+    minVersion?: number;
+  }):
+    | Array<{ project_dir: string; count: number }>
+    | Promise<Array<{ project_dir: string; count: number }>>;
+
+  /**
+   * Persist the full result of a `csk patterns` run: a row in csk_pattern_runs
+   * plus one row in csk_findings per finding, written in a single transaction.
+   * `sources` captures the full input set for later display (pre-filtering, as
+   * the enriched-summary pool may grow between runs).
+   */
+  insertPatternRun(args: {
+    run: PatternRunRecord;
+    findings: Finding[];
+    sources: PatternRunSource[];
+  }): void | Promise<void>;
+
+  listPatternRuns(
+    filter?: { scope?: PatternScope; project_dir?: string; limit?: number },
+  ): PatternRunRecord[] | Promise<PatternRunRecord[]>;
+
+  getPatternRun(runId: string): PatternRunRecord | null | Promise<PatternRunRecord | null>;
+
+  listFindings(filter: {
+    run_id?: string;
+    kind?: FindingKind;
+    limit?: number;
+  }): FindingRecord[] | Promise<FindingRecord[]>;
+
+  /**
+   * Decorated source-session list for a patterns run: each entry carries the
+   * session's basic metadata, started_at, and one_liner summary (if any).
+   * Returns empty array for pre-migration runs that didn't persist sources.
+   */
+  listPatternRunSources(runId: string): PatternRunSourceItem[] | Promise<PatternRunSourceItem[]>;
+}
+
+export interface PatternRunSourceItem {
+  source_key: string;
+  host_id: string;
+  session_id: string;
+  project_dir: string;
+  kind: string;
+  parent_session_id: string | null;
+  started_at: string | null;
+  user_message_count: number | null;
+  one_liner: string | null;
+  tags: string[] | null;
+}
+
+export interface EnrichedSummary {
+  source_key: string;
+  host_id: string;
+  project_dir: string;
+  session_id: string;
+  started_at: string | null;
+  summary: SessionSummaryRecord["summary"];
+  one_liner: string;
+  tags: string[];
+  signals_version: number;
 }
 
 export interface SessionWithDetails {

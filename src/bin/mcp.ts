@@ -2,7 +2,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { summarizeSession } from "../core/analyze.js";
+import { CURRENT_SIGNALS_VERSION, summarizeSession } from "../core/analyze.js";
 import { AnthropicClient } from "../core/anthropic.js";
 import { loadConfig } from "../core/config.js";
 import { createStore } from "../core/store/index.js";
@@ -205,6 +205,7 @@ async function main() {
         output_tokens: usage.output_tokens,
         generated_at: new Date().toISOString(),
         generated_for_mtime: details.parsed_for_mtime,
+        signals_version: CURRENT_SIGNALS_VERSION,
       };
       await store.upsertSessionSummary(record);
       return textContent({ source: "generated", ...record });
@@ -246,6 +247,64 @@ async function main() {
         });
       }
       return textContent({ days, count: recap.length, recap });
+    },
+  );
+
+  server.registerTool(
+    "csk_patterns",
+    {
+      description:
+        "Cross-session skill-gap and friction findings from `csk patterns`. Two modes: 'project' (single repo / worktree group) and 'global' (cross-project habits). Returns findings from the latest matching run by default; pass run_id for a specific run.",
+      inputSchema: {
+        scope: z
+          .enum(["project", "global"])
+          .optional()
+          .describe("Filter past runs by scope. Omit to include any."),
+        project_dir: z
+          .string()
+          .optional()
+          .describe("With scope='project': only runs that included this project_dir."),
+        run_id: z.string().optional().describe("Pattern run id. Defaults to the latest matching run."),
+        kind: z
+          .enum([
+            "repetition",
+            "correction_pattern",
+            "friction",
+            "skill_gap",
+            "codebase_smell",
+            "documentation_gap",
+            "test_coverage_gap",
+            "api_friction",
+          ])
+          .optional()
+          .describe("Filter findings by kind."),
+        limit: z.number().int().min(1).max(200).optional().describe("Max findings (default 50)."),
+      },
+    },
+    async (args) => {
+      let runId = args.run_id;
+      if (!runId) {
+        const runs = await store.listPatternRuns({
+          scope: args.scope,
+          project_dir: args.project_dir,
+          limit: 1,
+        });
+        if (runs.length === 0) {
+          return textContent({
+            found: false,
+            reason:
+              "No pattern runs match. Run `csk patterns project --dir <X>` or `csk patterns global` to produce findings.",
+          });
+        }
+        runId = runs[0]!.run_id;
+      }
+      const run = await store.getPatternRun(runId);
+      const findings = await store.listFindings({
+        run_id: runId,
+        kind: args.kind,
+        limit: args.limit ?? 50,
+      });
+      return textContent({ run, count: findings.length, findings });
     },
   );
 

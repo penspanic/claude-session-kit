@@ -2,12 +2,20 @@ import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type {
+  EnrichedSummary,
+  PatternRunSourceItem,
   RecentProjectStats,
   SessionStore,
   SessionWithDetails,
 } from "./index.js";
 import type {
   BackupRun,
+  Finding,
+  FindingKind,
+  FindingRecord,
+  PatternRunRecord,
+  PatternRunSource,
+  PatternScope,
   SearchHit,
   SessionDetailsRecord,
   SessionFilter,
@@ -30,6 +38,47 @@ interface BackupRunRow {
   bytes_copied: number;
   status: string;
   error_message: string | null;
+}
+
+interface PatternRunRow {
+  run_id: string;
+  host_id: string;
+  model: string;
+  summary_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  finding_count: number;
+  filter_json: string | null;
+  started_at: string;
+  finished_at: string | null;
+  scope: string | null;
+  scope_project_dirs_json: string | null;
+}
+
+function rowToPatternRun(r: PatternRunRow): PatternRunRecord {
+  let dirs: string[] | null = null;
+  if (r.scope_project_dirs_json) {
+    try {
+      const parsed = JSON.parse(r.scope_project_dirs_json) as unknown;
+      if (Array.isArray(parsed)) dirs = parsed.filter((x): x is string => typeof x === "string");
+    } catch {
+      dirs = null;
+    }
+  }
+  return {
+    run_id: r.run_id,
+    host_id: r.host_id,
+    model: r.model,
+    summary_count: r.summary_count,
+    input_tokens: r.input_tokens,
+    output_tokens: r.output_tokens,
+    finding_count: r.finding_count,
+    filter_json: r.filter_json,
+    started_at: r.started_at,
+    finished_at: r.finished_at,
+    scope: r.scope === "project" || r.scope === "global" ? r.scope : null,
+    scope_project_dirs: dirs,
+  };
 }
 
 interface SessionRow {
@@ -539,8 +588,9 @@ export class SqliteStore implements SessionStore {
       .prepare(`
         INSERT INTO session_summaries (
           source_key, host_id, one_liner, summary_json, tags, model,
-          input_tokens, output_tokens, generated_at, generated_for_mtime
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          input_tokens, output_tokens, generated_at, generated_for_mtime,
+          signals_version
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (source_key, host_id) DO UPDATE SET
           one_liner            = excluded.one_liner,
           summary_json         = excluded.summary_json,
@@ -549,7 +599,8 @@ export class SqliteStore implements SessionStore {
           input_tokens         = excluded.input_tokens,
           output_tokens        = excluded.output_tokens,
           generated_at         = excluded.generated_at,
-          generated_for_mtime  = excluded.generated_for_mtime
+          generated_for_mtime  = excluded.generated_for_mtime,
+          signals_version      = excluded.signals_version
       `)
       .run(
         record.source_key,
@@ -562,6 +613,7 @@ export class SqliteStore implements SessionStore {
         record.output_tokens,
         record.generated_at,
         record.generated_for_mtime,
+        record.signals_version,
       );
   }
 
@@ -582,6 +634,7 @@ export class SqliteStore implements SessionStore {
           output_tokens: number;
           generated_at: string;
           generated_for_mtime: string;
+          signals_version: number | null;
         }
       | undefined;
     if (!row) return null;
@@ -596,6 +649,7 @@ export class SqliteStore implements SessionStore {
       output_tokens: row.output_tokens,
       generated_at: row.generated_at,
       generated_for_mtime: row.generated_for_mtime,
+      signals_version: row.signals_version ?? 0,
     };
   }
 
@@ -648,6 +702,341 @@ export class SqliteStore implements SessionStore {
     const stmt = this.db.prepare(sql);
     const row = (hostId ? stmt.get(hostId) : stmt.get()) as { n: number };
     return row.n;
+  }
+
+  listEnrichedSummaries(filter: {
+    host_id?: string;
+    project_dir?: string;
+    project_dirs?: string[];
+    since?: string;
+    limit?: number;
+    minVersion?: number;
+  }): EnrichedSummary[] {
+    const minVersion = filter.minVersion ?? 1;
+    const where: string[] = ["sum.signals_version >= ?"];
+    const params: unknown[] = [minVersion];
+    if (filter.host_id) {
+      where.push("sum.host_id = ?");
+      params.push(filter.host_id);
+    }
+    const dirs = (filter.project_dirs && filter.project_dirs.length > 0)
+      ? filter.project_dirs
+      : filter.project_dir
+        ? [filter.project_dir]
+        : [];
+    if (dirs.length > 0) {
+      const placeholders = dirs.map(() => "?").join(", ");
+      where.push(`s.project_dir IN (${placeholders})`);
+      params.push(...dirs);
+    }
+    if (filter.since) {
+      where.push("COALESCE(d.started_at, s.last_seen_at) >= ?");
+      params.push(filter.since);
+    }
+    const limit = filter.limit ?? 200;
+    const rows = this.db
+      .prepare(`
+        SELECT sum.source_key, sum.host_id, sum.one_liner, sum.summary_json, sum.tags,
+               sum.signals_version, s.project_dir, s.session_id, d.started_at
+        FROM session_summaries sum
+        INNER JOIN sessions s
+          ON s.source_key = sum.source_key AND s.host_id = sum.host_id
+        LEFT JOIN session_details d
+          ON d.source_key = sum.source_key AND d.host_id = sum.host_id
+        WHERE ${where.join(" AND ")}
+        ORDER BY COALESCE(d.started_at, s.last_seen_at) DESC
+        LIMIT ?
+      `)
+      .all(...params, limit) as Array<{
+        source_key: string;
+        host_id: string;
+        one_liner: string | null;
+        summary_json: string;
+        tags: string | null;
+        signals_version: number | null;
+        project_dir: string;
+        session_id: string;
+        started_at: string | null;
+      }>;
+    return rows.map((row) => ({
+      source_key: row.source_key,
+      host_id: row.host_id,
+      project_dir: row.project_dir,
+      session_id: row.session_id,
+      started_at: row.started_at,
+      summary: JSON.parse(row.summary_json) as SessionSummary,
+      one_liner: row.one_liner ?? "",
+      tags: row.tags ? (JSON.parse(row.tags) as string[]) : [],
+      signals_version: row.signals_version ?? 0,
+    }));
+  }
+
+  countEnrichedSummaries(args: {
+    host_id?: string;
+    project_dirs?: string[];
+    minVersion?: number;
+  }): number {
+    const minVersion = args.minVersion ?? 1;
+    const where: string[] = ["sum.signals_version >= ?"];
+    const params: unknown[] = [minVersion];
+    if (args.host_id) {
+      where.push("sum.host_id = ?");
+      params.push(args.host_id);
+    }
+    if (args.project_dirs && args.project_dirs.length > 0) {
+      const placeholders = args.project_dirs.map(() => "?").join(", ");
+      where.push(`s.project_dir IN (${placeholders})`);
+      params.push(...args.project_dirs);
+    }
+    const row = this.db
+      .prepare(`
+        SELECT COUNT(*) AS n
+        FROM session_summaries sum
+        INNER JOIN sessions s
+          ON s.source_key = sum.source_key AND s.host_id = sum.host_id
+        WHERE ${where.join(" AND ")}
+      `)
+      .get(...params) as { n: number };
+    return row.n;
+  }
+
+  countEnrichedSummariesByProject(args: {
+    host_id?: string;
+    minVersion?: number;
+  }): Array<{ project_dir: string; count: number }> {
+    const minVersion = args.minVersion ?? 1;
+    const where: string[] = ["sum.signals_version >= ?"];
+    const params: unknown[] = [minVersion];
+    if (args.host_id) {
+      where.push("sum.host_id = ?");
+      params.push(args.host_id);
+    }
+    const rows = this.db
+      .prepare(`
+        SELECT s.project_dir AS project_dir, COUNT(*) AS count
+        FROM session_summaries sum
+        INNER JOIN sessions s
+          ON s.source_key = sum.source_key AND s.host_id = sum.host_id
+        WHERE ${where.join(" AND ")}
+        GROUP BY s.project_dir
+        ORDER BY count DESC
+      `)
+      .all(...params) as Array<{ project_dir: string; count: number }>;
+    return rows;
+  }
+
+  insertPatternRun(args: {
+    run: PatternRunRecord;
+    findings: Finding[];
+    sources: PatternRunSource[];
+  }): void {
+    const run = args.run;
+    const insertRun = this.db.prepare(`
+      INSERT INTO csk_pattern_runs (
+        run_id, host_id, model, summary_count, input_tokens, output_tokens,
+        finding_count, filter_json, started_at, finished_at, source_keys_json,
+        scope, scope_project_dirs_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const insertFinding = this.db.prepare(`
+      INSERT INTO csk_findings (
+        run_id, kind, cluster_key, title, description, suggested_remedy,
+        evidence_json, score, model, input_tokens, output_tokens, generated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const generatedAt = run.finished_at ?? run.started_at;
+    const tx = this.db.transaction(() => {
+      insertRun.run(
+        run.run_id,
+        run.host_id,
+        run.model,
+        run.summary_count,
+        run.input_tokens,
+        run.output_tokens,
+        args.findings.length,
+        run.filter_json,
+        run.started_at,
+        run.finished_at,
+        JSON.stringify(args.sources),
+        run.scope,
+        run.scope_project_dirs ? JSON.stringify(run.scope_project_dirs) : null,
+      );
+      for (const f of args.findings) {
+        insertFinding.run(
+          run.run_id,
+          f.kind,
+          f.cluster_key ?? null,
+          f.title,
+          f.description,
+          f.suggested_remedy ?? null,
+          JSON.stringify(f.evidence),
+          f.score ?? null,
+          run.model,
+          0,
+          0,
+          generatedAt,
+        );
+      }
+    });
+    tx();
+  }
+
+  listPatternRuns(
+    filter: { scope?: PatternScope; project_dir?: string; limit?: number } = {},
+  ): PatternRunRecord[] {
+    const where: string[] = [];
+    const params: unknown[] = [];
+    if (filter.scope) {
+      where.push("scope = ?");
+      params.push(filter.scope);
+    }
+    if (filter.project_dir) {
+      // JSON array containment: the dir string must appear in the array. Using
+      // a LIKE on the JSON text is cheap and correct for our flat string array.
+      where.push(`scope_project_dirs_json LIKE ?`);
+      params.push(`%${JSON.stringify(filter.project_dir)}%`);
+    }
+    const limit = filter.limit ?? 20;
+    const sql = `
+      SELECT * FROM csk_pattern_runs
+      ${where.length > 0 ? `WHERE ${where.join(" AND ")}` : ""}
+      ORDER BY started_at DESC
+      LIMIT ?
+    `;
+    const rows = this.db.prepare(sql).all(...params, limit) as Array<
+      PatternRunRow
+    >;
+    return rows.map(rowToPatternRun);
+  }
+
+  getPatternRun(runId: string): PatternRunRecord | null {
+    const row = this.db
+      .prepare(`SELECT * FROM csk_pattern_runs WHERE run_id = ?`)
+      .get(runId) as PatternRunRow | undefined;
+    return row ? rowToPatternRun(row) : null;
+  }
+
+  listPatternRunSources(runId: string): PatternRunSourceItem[] {
+    const row = this.db
+      .prepare(`SELECT source_keys_json FROM csk_pattern_runs WHERE run_id = ?`)
+      .get(runId) as { source_keys_json: string | null } | undefined;
+    if (!row?.source_keys_json) return [];
+    let sources: PatternRunSource[];
+    try {
+      const parsed = JSON.parse(row.source_keys_json) as unknown;
+      if (!Array.isArray(parsed)) return [];
+      sources = parsed.filter(
+        (s): s is PatternRunSource =>
+          typeof s === "object" &&
+          s !== null &&
+          typeof (s as PatternRunSource).source_key === "string" &&
+          typeof (s as PatternRunSource).host_id === "string",
+      );
+    } catch {
+      return [];
+    }
+    if (sources.length === 0) return [];
+
+    // Fetch in one query per source; with the 200-row cap the round-trip
+    // cost is negligible and the code is clearer than a json_each join.
+    const stmt = this.db.prepare(`
+      SELECT s.source_key, s.host_id, s.session_id, s.project_dir, s.kind,
+             s.parent_session_id,
+             d.started_at, d.user_message_count,
+             sum.one_liner, sum.tags
+      FROM sessions s
+      LEFT JOIN session_details d
+        ON d.source_key = s.source_key AND d.host_id = s.host_id
+      LEFT JOIN session_summaries sum
+        ON sum.source_key = s.source_key AND sum.host_id = s.host_id
+      WHERE s.source_key = ? AND s.host_id = ?
+    `);
+
+    const items: PatternRunSourceItem[] = [];
+    for (const s of sources) {
+      const r = stmt.get(s.source_key, s.host_id) as
+        | {
+            source_key: string;
+            host_id: string;
+            session_id: string;
+            project_dir: string;
+            kind: string;
+            parent_session_id: string | null;
+            started_at: string | null;
+            user_message_count: number | null;
+            one_liner: string | null;
+            tags: string | null;
+          }
+        | undefined;
+      if (!r) continue;
+      items.push({
+        source_key: r.source_key,
+        host_id: r.host_id,
+        session_id: r.session_id,
+        project_dir: r.project_dir,
+        kind: r.kind,
+        parent_session_id: r.parent_session_id,
+        started_at: r.started_at,
+        user_message_count: r.user_message_count,
+        one_liner: r.one_liner ?? null,
+        tags: r.tags ? (JSON.parse(r.tags) as string[]) : null,
+      });
+    }
+    return items;
+  }
+
+  listFindings(filter: {
+    run_id?: string;
+    kind?: FindingKind;
+    limit?: number;
+  }): FindingRecord[] {
+    const where: string[] = [];
+    const params: unknown[] = [];
+    if (filter.run_id) {
+      where.push("run_id = ?");
+      params.push(filter.run_id);
+    }
+    if (filter.kind) {
+      where.push("kind = ?");
+      params.push(filter.kind);
+    }
+    const sql = `
+      SELECT * FROM csk_findings
+      ${where.length > 0 ? `WHERE ${where.join(" AND ")}` : ""}
+      ORDER BY id ASC
+      LIMIT ?
+    `;
+    const limit = filter.limit ?? 200;
+    const rows = this.db.prepare(sql).all(...params, limit) as Array<{
+      id: number;
+      run_id: string;
+      kind: string;
+      cluster_key: string | null;
+      title: string;
+      description: string;
+      suggested_remedy: string | null;
+      evidence_json: string;
+      score: number | null;
+      model: string;
+      input_tokens: number;
+      output_tokens: number;
+      generated_at: string;
+    }>;
+    return rows.map((r) => ({
+      id: r.id,
+      run_id: r.run_id,
+      kind: r.kind as FindingKind,
+      cluster_key: r.cluster_key ?? undefined,
+      title: r.title,
+      description: r.description,
+      suggested_remedy: r.suggested_remedy ?? undefined,
+      evidence: JSON.parse(r.evidence_json) as FindingRecord["evidence"],
+      score: r.score ?? undefined,
+      model: r.model,
+      input_tokens: r.input_tokens,
+      output_tokens: r.output_tokens,
+      generated_at: r.generated_at,
+    }));
   }
 
   countParsedSessions(hostId?: string): number {

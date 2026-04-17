@@ -154,6 +154,7 @@ function summary(overrides: Partial<SessionSummaryRecord> = {}): SessionSummaryR
     output_tokens: 75,
     generated_at: "2026-04-16T11:00:00Z",
     generated_for_mtime: "2026-04-16T10:00:00Z",
+    signals_version: 1,
     ...overrides,
   };
 }

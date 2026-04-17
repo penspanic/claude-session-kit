@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { summarizeSession, type AnalyzeCandidate, type AnalyzePlan } from "../analyze.js";
+import {
+  CURRENT_SIGNALS_VERSION,
+  summarizeSession,
+  type AnalyzeCandidate,
+  type AnalyzePlan,
+} from "../analyze.js";
 import type { LLMClient } from "../analyze.js";
 import type { SessionStore } from "../store/index.js";
 import type { SessionSummaryRecord } from "../types.js";
@@ -142,6 +147,7 @@ export class AnalyzeJobRegistry {
             output_tokens: usage.output_tokens,
             generated_at: new Date().toISOString(),
             generated_for_mtime: details.parsed_for_mtime,
+            signals_version: CURRENT_SIGNALS_VERSION,
           };
           await Promise.resolve(store.upsertSessionSummary(record));
 
