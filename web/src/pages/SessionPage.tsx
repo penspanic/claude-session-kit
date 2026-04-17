@@ -36,22 +36,22 @@ export function SessionPage() {
       <div>
         <Link
           to={`/p?dir=${encodeURIComponent(s.project_dir)}`}
-          className="text-xs text-neutral-500 hover:text-neutral-300"
+          className="text-xs text-faint hover:text-dim"
         >
           ← {shortProject(s.project_dir)}
         </Link>
         <h1 className="text-lg font-semibold mt-1 break-words">
-          {s.display_label ?? <span className="italic text-neutral-500">untitled session</span>}
+          {s.display_label ?? <span className="italic text-faint">untitled session</span>}
         </h1>
         {s.display_label_source && s.display_label_source !== "summary" && (
-          <div className="mt-1 text-[11px] text-neutral-500">
-            label from <span className="text-neutral-300">{s.display_label_source.replace("_", " ")}</span>
-            {" — "}no LLM summary yet (run <code className="text-neutral-300">csk analyze</code>)
+          <div className="mt-1 text-[11px] text-faint">
+            label from <span className="text-dim">{s.display_label_source.replace("_", " ")}</span>
+            {" — "}no LLM summary yet (run <code className="text-dim">csk analyze</code>)
           </div>
         )}
-        <div className="text-xs text-neutral-500 break-all font-mono mt-1">{s.source_key}</div>
+        <div className="text-xs text-faint break-all font-mono mt-1">{s.source_key}</div>
         {s.kind === "subagent" && (
-          <span className="inline-block mt-1 px-1.5 py-0.5 rounded bg-amber-950/60 text-amber-300 text-[10px]">
+          <span className="inline-block mt-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300 text-[10px]">
             subagent of {s.parent_session_id}
           </span>
         )}
@@ -60,23 +60,23 @@ export function SessionPage() {
       {(s.custom_title || s.agent_name || s.last_prompt) && (
         <section>
           <SectionHead>From session log</SectionHead>
-          <div className="rounded border border-neutral-800 bg-neutral-900/40 p-4 space-y-3 text-sm">
+          <div className="rounded border border-border bg-bg-elev/60 p-4 space-y-3 text-sm">
             {s.custom_title && (
               <div>
-                <div className="text-[10px] uppercase tracking-wide text-neutral-500 mb-0.5">Custom title</div>
-                <div className="text-neutral-100">{s.custom_title}</div>
+                <div className="text-[10px] uppercase tracking-wide text-faint mb-0.5">Custom title</div>
+                <div className="text-text">{s.custom_title}</div>
               </div>
             )}
             {s.agent_name && (
               <div>
-                <div className="text-[10px] uppercase tracking-wide text-neutral-500 mb-0.5">Agent name</div>
-                <div className="font-mono text-neutral-100">{s.agent_name}</div>
+                <div className="text-[10px] uppercase tracking-wide text-faint mb-0.5">Agent name</div>
+                <div className="font-mono text-text">{s.agent_name}</div>
               </div>
             )}
             {s.last_prompt && (
               <div>
-                <div className="text-[10px] uppercase tracking-wide text-neutral-500 mb-0.5">Last prompt (resume hint)</div>
-                <div className="text-neutral-200 whitespace-pre-wrap">{s.last_prompt}</div>
+                <div className="text-[10px] uppercase tracking-wide text-faint mb-0.5">Last prompt (resume hint)</div>
+                <div className="text-text whitespace-pre-wrap">{s.last_prompt}</div>
               </div>
             )}
           </div>
@@ -119,7 +119,7 @@ export function SessionPage() {
       <section>
         <SectionHead>
           User messages
-          <span className="text-xs font-normal text-neutral-500 ml-2">
+          <span className="text-xs font-normal text-faint ml-2">
             {data.user_messages?.length ?? 0}
           </span>
         </SectionHead>
@@ -130,14 +130,14 @@ export function SessionPage() {
 }
 
 function SectionHead({ children }: { children: React.ReactNode }) {
-  return <h2 className="text-sm font-semibold text-neutral-200 mb-2 uppercase tracking-wide">{children}</h2>;
+  return <h2 className="text-sm font-semibold text-text mb-2 uppercase tracking-wide">{children}</h2>;
 }
 
 function Meta({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div className="rounded border border-neutral-800 bg-neutral-900/40 px-3 py-2">
-      <div className="text-[10px] uppercase tracking-wide text-neutral-500">{label}</div>
-      <div className={`mt-0.5 text-sm truncate ${mono ? "font-mono text-neutral-300" : "text-neutral-100"}`} title={value}>
+    <div className="rounded border border-border bg-bg-elev/60 px-3 py-2">
+      <div className="text-[10px] uppercase tracking-wide text-faint">{label}</div>
+      <div className={`mt-0.5 text-sm truncate ${mono ? "font-mono text-dim" : "text-text"}`} title={value}>
         {value}
       </div>
     </div>
@@ -148,7 +148,7 @@ function ToolChips({ tools }: { tools: string[] }) {
   return (
     <div className="flex flex-wrap gap-1.5">
       {tools.map((t) => (
-        <span key={t} className="px-2 py-0.5 text-xs rounded border border-neutral-700 bg-neutral-900 text-neutral-200">
+        <span key={t} className="px-2 py-0.5 text-xs rounded border border-border-strong bg-bg-elev text-text">
           {t}
         </span>
       ))}
@@ -163,7 +163,7 @@ function SummaryBlock({
 }) {
   const body = summary.summary;
   return (
-    <div className="rounded border border-neutral-800 bg-neutral-900/40 p-4 space-y-3 text-sm">
+    <div className="rounded border border-border bg-bg-elev/60 p-4 space-y-3 text-sm">
       <Field label="What was tried" value={body.what_tried} />
       <Field label="Outcome" value={body.outcome} />
       {body.notable.length > 0 && (
@@ -174,17 +174,17 @@ function SummaryBlock({
       )}
       {summary.tags.length > 0 && (
         <div>
-          <div className="text-[10px] uppercase tracking-wide text-neutral-500 mb-1">Tags</div>
+          <div className="text-[10px] uppercase tracking-wide text-faint mb-1">Tags</div>
           <div className="flex flex-wrap gap-1.5">
             {summary.tags.map((t) => (
-              <span key={t} className="px-1.5 py-0.5 text-[11px] rounded bg-neutral-800 text-neutral-300">
+              <span key={t} className="px-1.5 py-0.5 text-[11px] rounded bg-bg-sunk text-dim">
                 #{t}
               </span>
             ))}
           </div>
         </div>
       )}
-      <div className="text-[11px] text-neutral-500 pt-1 border-t border-neutral-800">
+      <div className="text-[11px] text-faint pt-1 border-t border-border">
         Generated by {summary.model} on {absTime(summary.generated_at)}
       </div>
     </div>
@@ -195,8 +195,8 @@ function Field({ label, value }: { label: string; value: string }) {
   if (!value) return null;
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-wide text-neutral-500 mb-0.5">{label}</div>
-      <div className="text-neutral-200 whitespace-pre-wrap">{value}</div>
+      <div className="text-[10px] uppercase tracking-wide text-faint mb-0.5">{label}</div>
+      <div className="text-text whitespace-pre-wrap">{value}</div>
     </div>
   );
 }
@@ -204,8 +204,8 @@ function Field({ label, value }: { label: string; value: string }) {
 function ListField({ label, items }: { label: string; items: string[] }) {
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-wide text-neutral-500 mb-0.5">{label}</div>
-      <ul className="list-disc pl-5 space-y-0.5 text-neutral-200">
+      <div className="text-[10px] uppercase tracking-wide text-faint mb-0.5">{label}</div>
+      <ul className="list-disc pl-5 space-y-0.5 text-text">
         {items.map((it, i) => (
           <li key={i}>{it}</li>
         ))}
@@ -233,7 +233,7 @@ function UserMessageList({
   const sorted = useMemo(() => [...messages].sort((a, b) => a.seq - b.seq), [messages]);
 
   if (sorted.length === 0) {
-    return <div className="text-neutral-500 text-sm">No user messages indexed.</div>;
+    return <div className="text-faint text-sm">No user messages indexed.</div>;
   }
 
   return (
@@ -243,21 +243,21 @@ function UserMessageList({
         const long = m.content.length > previewLen;
         const display = isOpen || !long ? m.content : `${m.content.slice(0, previewLen).trimEnd()}…`;
         return (
-          <li key={m.seq} className="rounded border border-neutral-800 bg-neutral-900/40 px-3 py-2">
-            <div className="flex items-center justify-between text-[11px] text-neutral-500 mb-1">
+          <li key={m.seq} className="rounded border border-border bg-bg-elev/60 px-3 py-2">
+            <div className="flex items-center justify-between text-[11px] text-faint mb-1">
               <span>
                 #{m.seq} · {absTime(m.timestamp)}
               </span>
               {long && (
                 <button
                   onClick={() => toggle(m.seq)}
-                  className="text-neutral-400 hover:text-neutral-200"
+                  className="text-dim hover:text-text"
                 >
                   {isOpen ? "collapse" : "expand"}
                 </button>
               )}
             </div>
-            <div className="text-sm text-neutral-200 whitespace-pre-wrap break-words">{display}</div>
+            <div className="text-sm text-text whitespace-pre-wrap break-words">{display}</div>
           </li>
         );
       })}

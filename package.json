@@ -1,10 +1,16 @@
 {
   "name": "claude-session-kit",
-  "version": "0.2.0",
-  "description": "Back up, index, and analyze Claude Code session logs. Exposes an MCP server so AI agents can query the archive natively.",
+  "version": "0.2.1",
+  "description": "Mine your Claude Code sessions for patterns. Incremental backup + per-session LLM summaries + cross-session finding detection (missing skills, codebase smells, doc gaps, test coverage gaps) grounded in real session evidence.",
   "keywords": [
     "claude",
     "claude-code",
+    "anthropic",
+    "ai-retrospective",
+    "pattern-detection",
+    "skill-gap",
+    "session-analysis",
+    "llm-insights",
     "mcp",
     "backup",
     "session",

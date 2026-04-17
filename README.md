@@ -1,21 +1,47 @@
 # claude-session-kit
 
-> Back up, index, and analyze Claude Code session logs. Ships an MCP server so AI agents can query the archive natively.
+> Mine your Claude Code sessions for patterns. Back up every session, summarize each one with an LLM, then cross-reference across sessions to surface recurring friction, missing skills, codebase smells, documentation gaps, and test coverage holes — every finding cites the real sessions it came from.
 
+[![npm](https://img.shields.io/npm/v/claude-session-kit.svg)](https://www.npmjs.com/package/claude-session-kit)
 [![CI](https://github.com/penspanic/claude-session-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/penspanic/claude-session-kit/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
+```mermaid
+flowchart LR
+  jsonl["~/.claude/projects/<br/>*.jsonl<br/><i>deleted after 30d</i>"]
+
+  subgraph csk["claude-session-kit"]
+    direction TB
+    backup["csk backup"] --> store[("SQLite index<br/>+ blob mirror<br/>+ FTS5 search")]
+    store --> analyze["csk analyze<br/>per-session LLM summary<br/><i>intent · friction · corrections</i>"]
+    analyze --> patterns["csk patterns<br/>project / global<br/><i>cross-session findings</i>"]
+  end
+
+  jsonl --> backup
+
+  findings["Findings<br/>• repetition / skill_gap<br/>• correction_pattern<br/>• codebase_smell / api_friction<br/>• documentation_gap / test_coverage_gap<br/><br/><b>→ CLAUDE.md · new skill · refactor · docs · tests</b>"]
+  patterns --> findings
+
+  surfaces["CLI&nbsp;&nbsp;|&nbsp;&nbsp;Web dashboard (csk serve)&nbsp;&nbsp;|&nbsp;&nbsp;MCP server (agents)"]
+  store --- surfaces
+  findings --- surfaces
+```
+
 ## Why
 
-Claude Code stores every session under `~/.claude/projects/**/*.jsonl`, but the default `cleanupPeriodDays` is **30** — so a month from now, your debugging traces, tool-use history, and subagent logs are gone. Those artifacts are *exactly* what you want to mine for retrospectives, blog material, and meta-improvements to your workflow.
+Your Claude Code sessions are the highest-signal record of how you *actually* work with an AI — every correction you made, every time the assistant got stuck on the same thing, every recurring intent. But:
 
-`claude-session-kit` does five things:
+1. **They disappear.** Claude Code deletes sessions after 30 days by default (`cleanupPeriodDays`).
+2. **One session tells you what happened that time.** The interesting signal — "I keep redirecting the assistant away from `any` casts", "the /serve skill keeps getting over-engineered", "we have three sessions failing the same handover bug" — lives *across* sessions, and nothing in Claude Code compares them for you.
+3. **Patterns that matter become invisible.** If you correct the same mistake 10 times in 10 different sessions, no one is watching and writing a CLAUDE.md rule for you.
 
-1. **Backup** — mirrors every file under your projects directory (JSONL sessions, subagent logs, `tool-results/`, screenshots, meta JSON) into a blob store. Incremental; safe to run nightly.
-2. **Index** — parses session metadata into a SQLite index: main sessions vs subagents, parent linkage, tool usage, token counts, per-host/per-user attribution, plus FTS5 full-text search over user messages.
-3. **Analyze** — LLM-powered summaries of each session (intent, what was tried, outcome, friction events, user corrections).
-4. **Detect patterns** — cross-session analysis to surface repeated friction, missing skills, codebase smells, documentation gaps, and test coverage gaps. Two modes: project (one repo or worktree group) and global (habits that span projects).
-5. **Expose** — an MCP server and a local read-only web dashboard (`csk serve`) so both AI agents and humans can query the archive.
+`claude-session-kit` closes the loop:
+
+- **Backup** — nightly mirror of every JSONL, subagent log, tool result, and meta file before the cleanup timer fires.
+- **Analyze** (`csk analyze`) — per-session LLM summary extracting intent, what was tried, outcome, friction events, and verbatim user corrections.
+- **Detect patterns** (`csk patterns`) — feeds N enriched summaries into one cross-session LLM call and returns actionable findings. Project mode scopes to one repo (or a worktree group); global mode requires evidence from ≥2 distinct projects so it only keeps universal habits. Findings span 8 kinds — `repetition`, `correction_pattern`, `friction`, `skill_gap`, `codebase_smell`, `documentation_gap`, `test_coverage_gap`, `api_friction` — and each one cites the sessions it came from so the remedy is grounded, not hallucinated.
+- **Remedies that aren't "just add a CLAUDE.md rule"** — the prompt is deliberately built to route evidence about code to refactor/docs/tests suggestions, not behavioral rules. If you keep pasting the same snippet, that's a missing skill. If the same function keeps tripping up the assistant, that's a codebase smell.
+- **Three surfaces, one core** — CLI, local web dashboard (`csk serve`: project tree, full-text search, runs Analyze/Patterns with cost preview), and an MCP server so agents like Claude Code can query your own history as a tool.
 
 ## Features
 

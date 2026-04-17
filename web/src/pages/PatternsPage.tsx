@@ -24,14 +24,22 @@ const KIND_LABELS: Record<string, string> = {
 };
 
 const KIND_ACCENT: Record<string, string> = {
-  repetition: "bg-sky-950/60 text-sky-300 border-sky-800/60",
-  correction_pattern: "bg-fuchsia-950/60 text-fuchsia-300 border-fuchsia-800/60",
-  friction: "bg-rose-950/60 text-rose-300 border-rose-800/60",
-  skill_gap: "bg-amber-950/60 text-amber-300 border-amber-800/60",
-  codebase_smell: "bg-emerald-950/60 text-emerald-300 border-emerald-800/60",
-  documentation_gap: "bg-indigo-950/60 text-indigo-300 border-indigo-800/60",
-  test_coverage_gap: "bg-teal-950/60 text-teal-300 border-teal-800/60",
-  api_friction: "bg-orange-950/60 text-orange-300 border-orange-800/60",
+  repetition:
+    "bg-sky-100 text-sky-900 border-sky-300 dark:bg-sky-950/60 dark:text-sky-300 dark:border-sky-800/60",
+  correction_pattern:
+    "bg-fuchsia-100 text-fuchsia-900 border-fuchsia-300 dark:bg-fuchsia-950/60 dark:text-fuchsia-300 dark:border-fuchsia-800/60",
+  friction:
+    "bg-rose-100 text-rose-900 border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800/60",
+  skill_gap:
+    "bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800/60",
+  codebase_smell:
+    "bg-emerald-100 text-emerald-900 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800/60",
+  documentation_gap:
+    "bg-indigo-100 text-indigo-900 border-indigo-300 dark:bg-indigo-950/60 dark:text-indigo-300 dark:border-indigo-800/60",
+  test_coverage_gap:
+    "bg-teal-100 text-teal-900 border-teal-300 dark:bg-teal-950/60 dark:text-teal-300 dark:border-teal-800/60",
+  api_friction:
+    "bg-orange-100 text-orange-900 border-orange-300 dark:bg-orange-950/60 dark:text-orange-300 dark:border-orange-800/60",
 };
 
 /** Reused by the /patterns (global) route and the per-project patterns card. */
@@ -226,7 +234,7 @@ export function PatternsPage({ scope: fixedScope }: { scope?: "project" | "globa
   return (
     <div className="space-y-6 max-w-4xl">
       <div>
-        <Link to="/" className="text-xs text-neutral-500 hover:text-neutral-300">← Home</Link>
+        <Link to="/" className="text-xs text-faint hover:text-dim">← Home</Link>
         <div className="flex items-baseline gap-3 mt-1">
           <h1 className="text-lg font-semibold">Patterns</h1>
           <ScopeTabs
@@ -242,7 +250,7 @@ export function PatternsPage({ scope: fixedScope }: { scope?: "project" | "globa
             }}
           />
         </div>
-        <p className="text-sm text-neutral-400 mt-2">
+        <p className="text-sm text-dim mt-2">
           {scope === "project"
             ? "Project mode: find patterns within one logical project (pick one or more worktrees of the same repo). Remedies target the project's CLAUDE.md or project-specific skills."
             : "Global mode: find universal habits across all projects. Each finding must cite evidence from ≥2 distinct project_dirs. Remedies target ~/.claude/CLAUDE.md."}
@@ -330,21 +338,21 @@ function ScopeTabs({
 }) {
   if (disabled) {
     return (
-      <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded bg-neutral-800 text-neutral-300">
+      <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded bg-bg-sunk text-dim">
         {scope}
       </span>
     );
   }
   return (
-    <div className="flex gap-0 rounded border border-neutral-800 overflow-hidden text-xs">
+    <div className="flex gap-0 rounded border border-border overflow-hidden text-xs">
       {(["global", "project"] as const).map((s) => (
         <button
           key={s}
           onClick={() => onChange(s)}
           className={`px-3 py-1 transition-colors ${
             scope === s
-              ? "bg-neutral-100 text-neutral-900"
-              : "bg-neutral-900 text-neutral-400 hover:text-neutral-200"
+              ? "bg-accent text-accent-text"
+              : "bg-bg-elev text-dim hover:text-text"
           }`}
         >
           {s}
@@ -371,12 +379,12 @@ function ProjectPicker({
     : projects;
 
   return (
-    <section className="rounded border border-neutral-800 bg-neutral-900/40 overflow-hidden">
-      <header className="flex items-center gap-3 px-4 py-2 border-b border-neutral-800 bg-neutral-900/60">
-        <div className="text-xs uppercase tracking-wide text-neutral-400">
+    <section className="rounded border border-border bg-bg-elev/60 overflow-hidden">
+      <header className="flex items-center gap-3 px-4 py-2 border-b border-border bg-bg-elev/80">
+        <div className="text-xs uppercase tracking-wide text-dim">
           Pick project(s)
         </div>
-        <div className="text-[11px] text-neutral-500">
+        <div className="text-[11px] text-faint">
           {selected.length} selected · worktrees of the same repo should be checked together
         </div>
         <div className="ml-auto flex gap-2">
@@ -384,25 +392,25 @@ function ProjectPicker({
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             placeholder="filter substring…"
-            className="rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-xs w-40"
+            className="rounded border border-border-strong bg-bg px-2 py-1 text-xs w-40"
           />
           {selected.length > 0 && (
             <button
               onClick={onClear}
-              className="px-2 py-1 rounded border border-neutral-700 text-xs hover:border-neutral-500"
+              className="px-2 py-1 rounded border border-border-strong text-xs hover:border-border-strong"
             >
               Clear
             </button>
           )}
         </div>
       </header>
-      <ul className="divide-y divide-neutral-800 max-h-60 overflow-y-auto">
+      <ul className="divide-y divide-border max-h-60 overflow-y-auto">
         {visible.map((p) => {
           const checked = selected.includes(p.project_dir);
           return (
             <li key={p.project_dir}>
               <label
-                className={`flex items-center gap-3 px-4 py-2 cursor-pointer hover:bg-neutral-900/60 ${
+                className={`flex items-center gap-3 px-4 py-2 cursor-pointer hover:bg-bg-elev/80 ${
                   checked ? "" : "opacity-60"
                 }`}
               >
@@ -410,13 +418,13 @@ function ProjectPicker({
                   type="checkbox"
                   checked={checked}
                   onChange={() => onToggle(p.project_dir)}
-                  className="accent-neutral-200"
+                  className="accent-accent"
                 />
-                <span className="text-sm text-neutral-100 flex-1 truncate">
+                <span className="text-sm text-text flex-1 truncate">
                   {shortProject(p.project_dir)}{" "}
-                  <span className="text-[11px] text-neutral-500 font-mono">({p.project_dir})</span>
+                  <span className="text-[11px] text-faint font-mono">({p.project_dir})</span>
                 </span>
-                <span className="text-[11px] text-neutral-500 tabular-nums shrink-0">
+                <span className="text-[11px] text-faint tabular-nums shrink-0">
                   {p.count} summaries
                 </span>
               </label>
@@ -424,7 +432,7 @@ function ProjectPicker({
           );
         })}
         {visible.length === 0 && (
-          <li className="px-4 py-3 text-sm text-neutral-500">No projects match filter.</li>
+          <li className="px-4 py-3 text-sm text-faint">No projects match filter.</li>
         )}
       </ul>
     </section>
@@ -470,12 +478,12 @@ function PlanSection({
   const staleSummaries = totalSummaries - totalEnriched;
 
   return (
-    <section className="rounded border border-neutral-800 bg-neutral-900/40 p-4 space-y-4">
+    <section className="rounded border border-border bg-bg-elev/60 p-4 space-y-4">
       <div className="flex items-center gap-2">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-200">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-text">
           New {scope} run
         </h2>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950/60 text-amber-300">
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300">
           추정치 · estimate
         </span>
       </div>
@@ -495,7 +503,7 @@ function PlanSection({
           <select
             value={model}
             onChange={(e) => setModel(e.target.value)}
-            className="w-full rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm"
+            className="w-full rounded border border-border-strong bg-bg-elev px-3 py-2 text-sm"
           >
             {suggestedModels.map((m) => (
               <option key={m.id} value={m.id}>{m.label}</option>
@@ -509,7 +517,7 @@ function PlanSection({
             max={200}
             value={limit}
             onChange={(e) => setLimit(Math.max(1, Math.min(200, Number.parseInt(e.target.value, 10) || 1)))}
-            className="w-full rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm"
+            className="w-full rounded border border-border-strong bg-bg-elev px-3 py-2 text-sm"
           />
         </Field>
         <Field label='Language (e.g. "auto", "en", "한국어")'>
@@ -518,7 +526,7 @@ function PlanSection({
             value={language}
             onChange={(e) => setLanguage(e.target.value)}
             placeholder="auto"
-            className="w-full rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm font-mono"
+            className="w-full rounded border border-border-strong bg-bg-elev px-3 py-2 text-sm font-mono"
           />
         </Field>
       </div>
@@ -530,25 +538,25 @@ function PlanSection({
         <Stat label="≈ Cost" value={cost} highlight />
       </div>
 
-      <p className="text-[11px] text-neutral-500 leading-relaxed">{plan.notes}</p>
+      <p className="text-[11px] text-faint leading-relaxed">{plan.notes}</p>
 
-      <div className="flex items-center gap-3 sticky bottom-0 bg-neutral-950/95 -mx-4 px-4 py-3 border-t border-neutral-800">
+      <div className="flex items-center gap-3 sticky bottom-0 bg-bg/95 -mx-4 px-4 py-3 border-t border-border">
         <button
           onClick={onRun}
           disabled={!llmAvailable || plan.summary_count === 0 || running || planning}
-          className="px-4 py-2 rounded border border-neutral-200 bg-neutral-100 text-neutral-900 text-sm font-medium hover:bg-white disabled:opacity-30"
+          className="px-4 py-2 rounded border border-accent bg-accent text-accent-text text-sm font-medium hover:opacity-90 disabled:opacity-30"
         >
           Run on {plan.summary_count} summaries
         </button>
         <button
           onClick={onRefresh}
           disabled={planning}
-          className="px-4 py-2 rounded border border-neutral-700 text-sm hover:border-neutral-500 disabled:opacity-50"
+          className="px-4 py-2 rounded border border-border-strong text-sm hover:border-border-strong disabled:opacity-50"
         >
           {planning ? "Refreshing…" : "Refresh"}
         </button>
         {!llmAvailable && (
-          <span className="text-xs text-amber-300 ml-auto">
+          <span className="text-xs text-amber-700 dark:text-amber-300 ml-auto">
             Set API key on <Link to="/analyze" className="underline">Analyze</Link> page first.
           </span>
         )}
@@ -560,18 +568,18 @@ function PlanSection({
 function JobProgress({ job, onReset }: { job: PatternsJob; onReset: () => void }) {
   const done = job.status === "done" || job.status === "error";
   return (
-    <section className="rounded border border-neutral-800 bg-neutral-900/40 p-4 space-y-3">
+    <section className="rounded border border-border bg-bg-elev/60 p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-200">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-text">
           {done ? (job.status === "done" ? "Run complete" : "Run failed") : "Running…"}
         </h2>
         <span
           className={[
             "px-2 py-0.5 rounded text-[11px]",
-            job.status === "done" ? "bg-emerald-950/60 text-emerald-300" : "",
-            job.status === "error" ? "bg-red-950/60 text-red-300" : "",
-            job.status === "running" ? "bg-blue-950/60 text-blue-300" : "",
-            job.status === "queued" ? "bg-neutral-800 text-neutral-300" : "",
+            job.status === "done" ? "bg-emerald-100 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300" : "",
+            job.status === "error" ? "bg-red-100 text-red-900 dark:bg-red-950/60 dark:text-red-300" : "",
+            job.status === "running" ? "bg-blue-100 text-blue-900 dark:bg-blue-950/60 dark:text-blue-300" : "",
+            job.status === "queued" ? "bg-bg-sunk text-dim" : "",
           ].join(" ")}
         >
           {job.status}
@@ -587,7 +595,7 @@ function JobProgress({ job, onReset }: { job: PatternsJob; onReset: () => void }
       {done && (
         <button
           onClick={onReset}
-          className="px-3 py-1.5 rounded border border-neutral-700 text-xs hover:border-neutral-500"
+          className="px-3 py-1.5 rounded border border-border-strong text-xs hover:border-border-strong"
         >
           Close
         </button>
@@ -606,11 +614,11 @@ function RunHistory({
   onSelect: (runId: string) => void;
 }) {
   return (
-    <section className="rounded border border-neutral-800 bg-neutral-900/40 overflow-hidden">
-      <header className="px-4 py-2 border-b border-neutral-800 bg-neutral-900/60 text-xs uppercase tracking-wide text-neutral-400">
+    <section className="rounded border border-border bg-bg-elev/60 overflow-hidden">
+      <header className="px-4 py-2 border-b border-border bg-bg-elev/80 text-xs uppercase tracking-wide text-dim">
         Past runs
       </header>
-      <ul className="divide-y divide-neutral-800 max-h-60 overflow-y-auto">
+      <ul className="divide-y divide-border max-h-60 overflow-y-auto">
         {runs.map((r) => {
           const active = r.run_id === selectedRunId;
           const dirs = r.scope_project_dirs;
@@ -618,31 +626,31 @@ function RunHistory({
             <li key={r.run_id}>
               <button
                 onClick={() => onSelect(r.run_id)}
-                className={`w-full text-left px-4 py-2 flex items-center gap-3 hover:bg-neutral-900/60 ${
-                  active ? "bg-neutral-800/60" : ""
+                className={`w-full text-left px-4 py-2 flex items-center gap-3 hover:bg-bg-elev/80 ${
+                  active ? "bg-bg-sunk/60" : ""
                 }`}
               >
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm text-neutral-100 flex items-center gap-2 flex-wrap">
+                  <div className="text-sm text-text flex items-center gap-2 flex-wrap">
                     {r.scope && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-300">
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-bg-sunk text-dim">
                         {r.scope}
                       </span>
                     )}
                     <span>{r.finding_count} findings</span>
-                    <span className="text-neutral-600">·</span>
-                    <span className="text-neutral-400">{r.summary_count} summaries</span>
+                    <span className="text-faint">·</span>
+                    <span className="text-dim">{r.summary_count} summaries</span>
                     {dirs && dirs.length > 0 && (
-                      <span className="text-neutral-500 text-[11px] truncate">
+                      <span className="text-faint text-[11px] truncate">
                         · {dirs.map((d) => shortProject(d)).join(", ")}
                       </span>
                     )}
                   </div>
-                  <div className="text-[11px] text-neutral-500 font-mono truncate">
+                  <div className="text-[11px] text-faint font-mono truncate">
                     {r.run_id.slice(0, 8)} · {relTime(r.started_at)} · {r.model}
                   </div>
                 </div>
-                {active && <span className="text-[10px] text-neutral-300">viewing</span>}
+                {active && <span className="text-[10px] text-dim">viewing</span>}
               </button>
             </li>
           );
@@ -663,7 +671,7 @@ function FindingsList({
 }) {
   if (findings.length === 0) {
     return (
-      <section className="rounded border border-neutral-800 bg-neutral-900/40 p-4 text-sm text-neutral-400">
+      <section className="rounded border border-border bg-bg-elev/60 p-4 text-sm text-dim">
         {run
           ? "No findings produced in this run. The summary set may have been too small or too diverse."
           : "No runs yet. Start one above to produce findings."}
@@ -673,10 +681,10 @@ function FindingsList({
   return (
     <div className="space-y-4">
       {run && (
-        <div className="text-xs text-neutral-500">
-          Viewing run <span className="font-mono text-neutral-300">{run.run_id.slice(0, 8)}</span>
+        <div className="text-xs text-faint">
+          Viewing run <span className="font-mono text-dim">{run.run_id.slice(0, 8)}</span>
           {" · "}
-          {run.scope && <span className="text-neutral-400">{run.scope}</span>}
+          {run.scope && <span className="text-dim">{run.scope}</span>}
           {run.scope && " · "}
           <span title={absTime(run.started_at)}>{relTime(run.started_at)}</span>
           {" · "}
@@ -686,11 +694,11 @@ function FindingsList({
         </div>
       )}
       {[...findingsByKind.entries()].map(([kind, list]) => (
-        <section key={kind} className="space-y-2">
-          <h3 className="text-xs uppercase tracking-wide text-neutral-500">
+        <section key={kind} className="space-y-1.5">
+          <h3 className="text-[11px] uppercase tracking-wide text-faint">
             {KIND_LABELS[kind] ?? kind} · {list.length}
           </h3>
-          <ul className="space-y-2">
+          <ul className="space-y-1.5">
             {list.map((f) => (
               <FindingCard key={f.id} finding={f} />
             ))}
@@ -702,9 +710,10 @@ function FindingsList({
 }
 
 function FindingCard({ finding }: { finding: FindingRecord }) {
-  const accent = KIND_ACCENT[finding.kind] ?? "bg-neutral-900/60 text-neutral-300 border-neutral-800";
+  const accent = KIND_ACCENT[finding.kind] ?? "bg-bg-elev/80 text-dim border-border";
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
   return (
-    <li className="rounded border border-neutral-800 bg-neutral-900/40 p-4 space-y-3">
+    <li className="rounded border border-border bg-bg-elev/60 px-3 py-2.5 space-y-2">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-2 min-w-0 flex-1">
           <span
@@ -712,42 +721,46 @@ function FindingCard({ finding }: { finding: FindingRecord }) {
           >
             {KIND_LABELS[finding.kind] ?? finding.kind}
           </span>
-          <h4 className="text-sm font-medium text-neutral-100 break-words">
+          <h4 className="text-sm font-medium text-text break-words leading-snug">
             {finding.title}
           </h4>
         </div>
         {finding.score !== undefined && (
-          <span className="text-[10px] text-neutral-500 tabular-nums shrink-0">
+          <span className="text-[10px] text-faint tabular-nums shrink-0">
             {finding.score.toFixed(2)}
           </span>
         )}
       </div>
-      <p className="text-sm text-neutral-300 leading-relaxed">{finding.description}</p>
+      <p className="text-[13px] text-dim leading-snug">{finding.description}</p>
       {finding.suggested_remedy && (
-        <p className="text-sm text-amber-200/90 leading-relaxed">
+        <p className="text-[13px] text-amber-800 dark:text-amber-200/90 leading-snug">
           → {finding.suggested_remedy}
         </p>
       )}
-      <div className="pt-1 border-t border-neutral-800/60">
-        <div className="text-[10px] uppercase tracking-wide text-neutral-500 mb-1.5">
-          Evidence · {finding.evidence.length} sessions
-        </div>
+      <button
+        onClick={() => setEvidenceOpen((v) => !v)}
+        className="w-full flex items-center justify-between pt-1.5 border-t border-border/60 text-[10px] uppercase tracking-wide text-faint hover:text-dim"
+      >
+        <span>Evidence · {finding.evidence.length} sessions</span>
+        <span>{evidenceOpen ? "▾ hide" : "▸ show"}</span>
+      </button>
+      {evidenceOpen && (
         <ul className="space-y-1">
           {finding.evidence.map((e, i) => (
             <li key={`${e.source_key}-${i}`} className="text-xs">
               <Link
                 to={`/s?key=${encodeURIComponent(e.source_key)}`}
-                className="text-neutral-300 hover:text-neutral-100 font-mono"
+                className="text-dim hover:text-text font-mono"
               >
                 {e.source_key}
               </Link>
               {e.quote && (
-                <span className="text-neutral-500 italic ml-2">"{e.quote}"</span>
+                <span className="text-faint italic ml-2">"{e.quote}"</span>
               )}
             </li>
           ))}
         </ul>
-      </div>
+      )}
     </li>
   );
 }
@@ -755,53 +768,53 @@ function FindingCard({ finding }: { finding: FindingRecord }) {
 function SourcesList({ sources }: { sources: PatternRunSourceItem[] }) {
   const [open, setOpen] = useState(false);
   return (
-    <section className="rounded border border-neutral-800 bg-neutral-900/40 overflow-hidden">
+    <section className="rounded border border-border bg-bg-elev/60 overflow-hidden">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between px-4 py-2 border-b border-neutral-800 bg-neutral-900/60 hover:bg-neutral-900/80"
+        className="w-full flex items-center justify-between px-4 py-2 border-b border-border bg-bg-elev/80 hover:bg-bg-elev/80"
       >
-        <span className="text-xs uppercase tracking-wide text-neutral-400">
+        <span className="text-xs uppercase tracking-wide text-dim">
           Source sessions · {sources.length}
         </span>
-        <span className="text-[11px] text-neutral-500">{open ? "▾ hide" : "▸ show"}</span>
+        <span className="text-[11px] text-faint">{open ? "▾ hide" : "▸ show"}</span>
       </button>
       {open && (
-        <ul className="divide-y divide-neutral-800 max-h-[480px] overflow-y-auto">
+        <ul className="divide-y divide-border max-h-[480px] overflow-y-auto">
           {sources.map((s) => (
             <li key={`${s.source_key}-${s.host_id}`}>
               <Link
                 to={`/s?key=${encodeURIComponent(s.source_key)}`}
-                className="flex items-start gap-3 px-4 py-2.5 hover:bg-neutral-900/60"
+                className="flex items-start gap-3 px-4 py-2.5 hover:bg-bg-elev/80"
               >
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm text-neutral-100 truncate">
+                  <div className="text-sm text-text truncate">
                     {s.one_liner ?? (
-                      <span className="italic text-neutral-500">(no summary one-liner)</span>
+                      <span className="italic text-faint">(no summary one-liner)</span>
                     )}
                   </div>
-                  <div className="text-[11px] text-neutral-500 font-mono flex items-center gap-1.5 flex-wrap mt-0.5">
+                  <div className="text-[11px] text-faint font-mono flex items-center gap-1.5 flex-wrap mt-0.5">
                     <span>{shortProject(s.project_dir)}</span>
-                    <span className="text-neutral-600">·</span>
+                    <span className="text-faint">·</span>
                     <span>{shortSessionId(s.session_id)}</span>
                     {s.kind === "subagent" && (
-                      <span className="px-1 rounded bg-amber-950/60 text-amber-300 text-[10px]">
+                      <span className="px-1 rounded bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300 text-[10px]">
                         subagent
                       </span>
                     )}
-                    <span className="text-neutral-600">·</span>
+                    <span className="text-faint">·</span>
                     <span>{relTime(s.started_at)}</span>
                     {s.user_message_count !== null && (
                       <>
-                        <span className="text-neutral-600">·</span>
+                        <span className="text-faint">·</span>
                         <span>{s.user_message_count} msgs</span>
                       </>
                     )}
                   </div>
                 </div>
                 {s.tags && s.tags.length > 0 && (
-                  <div className="text-[10px] text-neutral-500 shrink-0 mt-1 flex gap-1 flex-wrap justify-end max-w-[40%]">
+                  <div className="text-[10px] text-faint shrink-0 mt-1 flex gap-1 flex-wrap justify-end max-w-[40%]">
                     {s.tags.slice(0, 4).map((t) => (
-                      <span key={t} className="px-1 rounded bg-neutral-800 text-neutral-400">
+                      <span key={t} className="px-1 rounded bg-bg-sunk text-dim">
                         {t}
                       </span>
                     ))}
@@ -819,7 +832,7 @@ function SourcesList({ sources }: { sources: PatternRunSourceItem[] }) {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <div className="text-[10px] uppercase tracking-wide text-neutral-500 mb-1">{label}</div>
+      <div className="text-[10px] uppercase tracking-wide text-faint mb-1">{label}</div>
       {children}
     </label>
   );
@@ -837,13 +850,13 @@ function Stat({
   small?: boolean;
 }) {
   return (
-    <div className="rounded border border-neutral-800 bg-neutral-950/40 px-3 py-2">
-      <div className="text-[10px] uppercase tracking-wide text-neutral-500">{label}</div>
+    <div className="rounded border border-border bg-bg/40 px-3 py-2">
+      <div className="text-[10px] uppercase tracking-wide text-faint">{label}</div>
       <div
         className={[
           "mt-1",
           small ? "text-xs" : "text-base",
-          highlight ? "font-semibold text-amber-300" : "text-neutral-100",
+          highlight ? "font-semibold text-amber-700 dark:text-amber-300" : "text-text",
         ].join(" ")}
       >
         {value}

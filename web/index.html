@@ -4,8 +4,21 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>claude-session-kit</title>
+    <script>
+      // Resolve theme before React paints so we avoid a dark→light flash on
+      // reload. Reads the persisted choice ("light" | "dark" | "system") and
+      // adds the `dark` class to <html> when appropriate.
+      (function () {
+        try {
+          var stored = localStorage.getItem("csk-theme");
+          var prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+          var resolved = stored === "light" || stored === "dark" ? stored : (prefersDark ? "dark" : "light");
+          if (resolved === "dark") document.documentElement.classList.add("dark");
+        } catch (_) {}
+      })();
+    </script>
   </head>
-  <body class="bg-neutral-950 text-neutral-100 font-mono antialiased">
+  <body class="bg-bg text-text font-mono antialiased">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
