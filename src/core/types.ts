@@ -61,6 +61,13 @@ export interface SearchHit {
   started_at: string | null;
 }
 
+export interface SessionCorrection {
+  /** Verbatim user phrase that redirects or corrects the assistant. */
+  user_quote: string;
+  /** One-line description of the assistant behavior being corrected. */
+  assistant_action: string;
+}
+
 export interface SessionSummary {
   one_liner: string;
   what_tried: string;
@@ -68,6 +75,12 @@ export interface SessionSummary {
   notable: string[];
   blog_hooks: string[];
   tags: string[];
+  /** Normalized task intent, e.g. "react refactor" or "sql migration debugging". */
+  intent?: string;
+  /** Natural-language observations of retries, backtracks, redo-loops. */
+  friction_events?: string[];
+  /** User corrections captured verbatim so cross-session passes can cluster them. */
+  corrections?: SessionCorrection[];
 }
 
 export interface SessionSummaryRecord {
@@ -81,6 +94,76 @@ export interface SessionSummaryRecord {
   output_tokens: number;
   generated_at: string;
   generated_for_mtime: string;
+  /** 0 = pre-signals summary. 1 = summary includes intent/friction/corrections. */
+  signals_version: number;
+}
+
+export type FindingKind =
+  | "repetition"
+  | "correction_pattern"
+  | "friction"
+  | "skill_gap"
+  /** Codebase smell: inconsistent or anti-pattern code that repeatedly trips
+   *  assistants — remedy is usually refactor, not a behavioral rule. */
+  | "codebase_smell"
+  /** Missing inline/module documentation that would have prevented confusion. */
+  | "documentation_gap"
+  /** Missing or weak tests that let regressions slip. */
+  | "test_coverage_gap"
+  /** API/module surface where correct use requires unstated side actions
+   *  (e.g. manual cache invalidation) — remedy is API redesign. */
+  | "api_friction";
+
+export interface FindingEvidence {
+  source_key: string;
+  host_id: string;
+  /** Short verbatim excerpt from the cited session's signals. */
+  quote?: string;
+}
+
+export interface Finding {
+  kind: FindingKind;
+  /** Stable-ish grouping key within a run so duplicates can be folded. */
+  cluster_key?: string;
+  title: string;
+  description: string;
+  /** Recommended remedy, e.g. "add slash-command X" or "add rule to CLAUDE.md". */
+  suggested_remedy?: string;
+  evidence: FindingEvidence[];
+  /** 0..1 confidence/severity as judged by the LLM. */
+  score?: number;
+}
+
+export interface FindingRecord extends Finding {
+  id: number;
+  run_id: string;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  generated_at: string;
+}
+
+export type PatternScope = "project" | "global";
+
+export interface PatternRunRecord {
+  run_id: string;
+  host_id: string;
+  model: string;
+  summary_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  finding_count: number;
+  filter_json: string | null;
+  started_at: string;
+  finished_at: string | null;
+  scope: PatternScope | null;
+  /** Project-mode: list of project_dirs this run consumed. Null for global. */
+  scope_project_dirs: string[] | null;
+}
+
+export interface PatternRunSource {
+  source_key: string;
+  host_id: string;
 }
 
 export interface SessionDetailsRecord {

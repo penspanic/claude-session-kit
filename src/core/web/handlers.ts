@@ -1,8 +1,21 @@
-import { DEFAULT_ANALYZE_MODEL, planAnalyzeRun, type AnalyzePlan } from "../analyze.js";
+import {
+  DEFAULT_ANALYZE_MODEL,
+  DEFAULT_LANGUAGE,
+  planAnalyzeRun,
+  resolveLanguage,
+  type AnalyzePlan,
+} from "../analyze.js";
+import {
+  DEFAULT_PATTERNS_BATCH,
+  DEFAULT_PATTERNS_MODEL,
+  planPatternsRun,
+  type PatternsPlan,
+} from "../patterns/detect.js";
 import { SUGGESTED_MODELS } from "../pricing.js";
-import type { SessionStore } from "../store/index.js";
-import type { SessionSummaryRecord } from "../types.js";
+import type { PatternRunSourceItem, SessionStore } from "../store/index.js";
+import type { FindingKind, FindingRecord, PatternRunRecord, PatternScope, SessionSummaryRecord } from "../types.js";
 import type { AnalyzeJobRegistry } from "./jobs.js";
+import type { PatternsJob, PatternsJobRegistry } from "./patterns-jobs.js";
 
 export interface StatsPayload {
   totalSessions: number;
@@ -89,8 +102,14 @@ export interface HandlerContext {
   userId: string;
   dataDir: string;
   jobs: AnalyzeJobRegistry;
-  /** Factory for the LLM client. Returns null when no API key is configured. */
-  makeLLMClient: (model: string) => import("../analyze.js").LLMClient | null;
+  patternsJobs: PatternsJobRegistry;
+  /** Factory for the LLM client. Returns null when no API key is configured.
+   * `maxTokens` is optional; patterns detection needs a larger budget than
+   * per-session summaries. */
+  makeLLMClient: (
+    model: string,
+    opts?: { maxTokens?: number },
+  ) => import("../analyze.js").LLMClient | null;
   /** Whether an API key is currently available (env or runtime-set). */
   llmAvailable: () => boolean;
   /**
@@ -325,6 +344,8 @@ export interface AnalyzeRequestBody {
   since?: string;
   limit?: number;
   model?: string;
+  /** Opaque language label. Default "auto". */
+  language?: string;
   /**
    * Optional explicit selection. When present (and non-empty), Run analyzes
    * exactly these source_keys instead of re-deriving from the filter. The UI
@@ -450,6 +471,7 @@ export async function postAnalyzeRun(
     plan: { ...plan, candidates: chosen },
     store: ctx.store,
     client,
+    language: resolveLanguage(body.language),
   });
   return { ok: true, job_id: job.id };
 }
@@ -468,4 +490,194 @@ function clampInt(value: number | undefined, min: number, max: number, fallback:
   if (n < min) return min;
   if (n > max) return max;
   return n;
+}
+
+export interface PatternsRequestBody {
+  scope: PatternScope;
+  /** Project mode only: one or more project_dirs (worktrees = same logical project). */
+  project_dirs?: string[];
+  host?: string;
+  since?: string;
+  limit?: number;
+  model?: string;
+  /** Opaque language label. Default "auto". */
+  language?: string;
+}
+
+export interface PatternsPlanResponse {
+  plan: PatternsPlan;
+  scope: PatternScope;
+  llm_available: boolean;
+  default_model: string;
+  suggested_models: typeof SUGGESTED_MODELS;
+  total_enriched_summaries: number;
+  total_summaries: number;
+  /** Per-project enriched-summary counts for the picker UI. */
+  projects: Array<{ project_dir: string; count: number }>;
+}
+
+function validatePatternsBody(
+  body: PatternsRequestBody,
+): { ok: false; reason: string } | { ok: true; dirs: string[] | undefined; scope: PatternScope } {
+  const scope = body.scope;
+  if (scope !== "project" && scope !== "global") {
+    return { ok: false, reason: "scope must be 'project' or 'global'." };
+  }
+  if (scope === "project") {
+    const dirs = Array.isArray(body.project_dirs) ? body.project_dirs.filter((d) => typeof d === "string" && d.length > 0) : [];
+    if (dirs.length === 0) {
+      return { ok: false, reason: "project scope requires at least one project_dir." };
+    }
+    return { ok: true, dirs, scope };
+  }
+  return { ok: true, dirs: undefined, scope };
+}
+
+export async function postPatternsPlan(
+  ctx: HandlerContext,
+  body: PatternsRequestBody,
+): Promise<PatternsPlanResponse | { ok: false; reason: string }> {
+  const v = validatePatternsBody(body);
+  if (!v.ok) return v;
+  const limit = clampInt(body.limit, 1, 200, DEFAULT_PATTERNS_BATCH);
+  const hostId = body.host ?? ctx.hostId;
+  const plan = await planPatternsRun(
+    ctx.store,
+    {
+      host_id: hostId,
+      project_dirs: v.dirs,
+      since: body.since,
+      limit,
+    },
+    body.model ?? DEFAULT_PATTERNS_MODEL,
+  );
+  const [total_enriched_summaries, total_summaries, projects] = await Promise.all([
+    Promise.resolve(
+      ctx.store.countEnrichedSummaries({ host_id: hostId, project_dirs: v.dirs }),
+    ),
+    Promise.resolve(ctx.store.countSummaries(hostId)),
+    Promise.resolve(ctx.store.countEnrichedSummariesByProject({ host_id: hostId })),
+  ]);
+  return {
+    plan,
+    scope: v.scope,
+    llm_available: ctx.llmAvailable(),
+    default_model: DEFAULT_PATTERNS_MODEL,
+    suggested_models: SUGGESTED_MODELS,
+    total_enriched_summaries,
+    total_summaries,
+    projects,
+  };
+}
+
+export async function postPatternsRun(
+  ctx: HandlerContext,
+  body: PatternsRequestBody,
+): Promise<{ ok: false; reason: string } | { ok: true; job_id: string }> {
+  if (!ctx.llmAvailable()) {
+    return {
+      ok: false,
+      reason: "API key not set. Use the Set API Key button (or set ANTHROPIC_API_KEY before launching).",
+    };
+  }
+  const v = validatePatternsBody(body);
+  if (!v.ok) return v;
+  const limit = clampInt(body.limit, 1, 200, DEFAULT_PATTERNS_BATCH);
+  const model = body.model ?? DEFAULT_PATTERNS_MODEL;
+  const hostId = body.host ?? ctx.hostId;
+  const summaries = await Promise.resolve(
+    ctx.store.listEnrichedSummaries({
+      host_id: hostId,
+      project_dirs: v.dirs,
+      since: body.since,
+      limit,
+    }),
+  );
+  if (summaries.length === 0) {
+    return { ok: false, reason: "No enriched summaries match the filter. Run `csk analyze` first." };
+  }
+  const client = ctx.makeLLMClient(model, { maxTokens: 8192 });
+  if (!client) return { ok: false, reason: "Failed to construct LLM client." };
+
+  const language = resolveLanguage(body.language);
+  const job = ctx.patternsJobs.start({
+    summaries,
+    model,
+    hostId,
+    scope: v.scope,
+    scopeProjectDirs: v.dirs ?? null,
+    language,
+    filter: {
+      scope: v.scope,
+      project_dirs: v.dirs ?? null,
+      host_id: hostId,
+      since: body.since ?? null,
+      limit,
+      language,
+    },
+    client,
+    store: ctx.store,
+  });
+  return { ok: true, job_id: job.id };
+}
+
+export async function getPatternsJob(
+  ctx: HandlerContext,
+  id: string,
+): Promise<{ found: boolean; job: PatternsJob | null }> {
+  const job = ctx.patternsJobs.get(id);
+  return { found: job !== null, job };
+}
+
+export async function getPatternsRuns(
+  ctx: HandlerContext,
+  params: { scope?: PatternScope; project_dir?: string; limit?: number },
+): Promise<{ runs: PatternRunRecord[] }> {
+  const limit = clampInt(params.limit, 1, 100, 20);
+  const runs = await Promise.resolve(
+    ctx.store.listPatternRuns({ scope: params.scope, project_dir: params.project_dir, limit }),
+  );
+  return { runs };
+}
+
+export async function getPatternsSources(
+  ctx: HandlerContext,
+  params: { run_id?: string },
+): Promise<{ run_id: string | null; sources: PatternRunSourceItem[] }> {
+  let runId = params.run_id;
+  if (!runId) {
+    const latest = await Promise.resolve(ctx.store.listPatternRuns({ limit: 1 }));
+    runId = latest[0]?.run_id;
+  }
+  if (!runId) return { run_id: null, sources: [] };
+  const sources = await Promise.resolve(ctx.store.listPatternRunSources(runId));
+  return { run_id: runId, sources };
+}
+
+export async function getPatternsFindings(
+  ctx: HandlerContext,
+  params: { run_id?: string; kind?: FindingKind; limit?: number },
+): Promise<{
+  run: PatternRunRecord | null;
+  findings: FindingRecord[];
+  latest_run_id: string | null;
+}> {
+  let runId = params.run_id;
+  const latestRuns = await Promise.resolve(ctx.store.listPatternRuns({ limit: 1 }));
+  const latestRunId = latestRuns[0]?.run_id ?? null;
+  if (!runId) runId = latestRunId ?? undefined;
+  if (!runId) {
+    return { run: null, findings: [], latest_run_id: null };
+  }
+  const [run, findings] = await Promise.all([
+    Promise.resolve(ctx.store.getPatternRun(runId)),
+    Promise.resolve(
+      ctx.store.listFindings({
+        run_id: runId,
+        kind: params.kind,
+        limit: clampInt(params.limit, 1, 200, 100),
+      }),
+    ),
+  ]);
+  return { run, findings, latest_run_id: latestRunId };
 }

@@ -9,21 +9,23 @@
 
 Claude Code stores every session under `~/.claude/projects/**/*.jsonl`, but the default `cleanupPeriodDays` is **30** — so a month from now, your debugging traces, tool-use history, and subagent logs are gone. Those artifacts are *exactly* what you want to mine for retrospectives, blog material, and meta-improvements to your workflow.
 
-`claude-session-kit` does four things:
+`claude-session-kit` does five things:
 
 1. **Backup** — mirrors every file under your projects directory (JSONL sessions, subagent logs, `tool-results/`, screenshots, meta JSON) into a blob store. Incremental; safe to run nightly.
-2. **Index** — parses session filenames into a SQLite index: main sessions vs subagents, parent linkage, per-host and per-user attribution.
-3. **Expose** — runs an MCP server that agents like Claude Code can call as a first-class tool.
-4. **Analyze** *(planned)* — LLM-powered summaries, pattern detection, skill-gap extraction.
+2. **Index** — parses session metadata into a SQLite index: main sessions vs subagents, parent linkage, tool usage, token counts, per-host/per-user attribution, plus FTS5 full-text search over user messages.
+3. **Analyze** — LLM-powered summaries of each session (intent, what was tried, outcome, friction events, user corrections).
+4. **Detect patterns** — cross-session analysis to surface repeated friction, missing skills, codebase smells, documentation gaps, and test coverage gaps. Two modes: project (one repo or worktree group) and global (habits that span projects).
+5. **Expose** — an MCP server and a local read-only web dashboard (`csk serve`) so both AI agents and humans can query the archive.
 
 ## Features
 
 - **Zero data loss** — mirrors non-JSONL files too (tool results, screenshots, meta). Anything that would disappear with the session gets preserved.
 - **Incremental backups** — size + mtime check, with 2-second tolerance for remote filesystems.
 - **Multi-host / multi-user** — every record carries `host_id` and `user_id`, so a team can point multiple machines at one remote store.
-- **Pluggable storage** — `SessionStore` (SQLite today; Postgres/Supabase on the roadmap) and `BlobStore` (local filesystem, rclone) interfaces. Swap backends without touching call sites.
+- **Pluggable storage** — `SessionStore` (SQLite today; Postgres on the roadmap) and `BlobStore` (local filesystem, rclone; native S3 on the roadmap) interfaces. Swap backends without touching call sites.
 - **Rclone-powered cloud** — one backend gives you Google Drive, OneDrive, Dropbox, S3, B2, and 60+ other providers.
-- **MCP-first** — the CLI and the MCP server share a single core, so every capability is available to both humans and agents.
+- **MCP-first** — the CLI, the web dashboard, and the MCP server share a single core, so every capability is available to humans and agents.
+- **Free-form output language** — `--lang <label>` on `csk analyze` and `csk patterns` lets the LLM respond in whatever language you name (`auto`, `en`, `한국어`, `日本語`, …). Identifiers and verbatim quotes stay in their original form.
 - **Project allow/blocklists** — exclude personal or client work from shared stores.
 
 ## Install
@@ -121,8 +123,7 @@ Current tools:
 | `csk_search` | Full-text search (FTS5) over user-message content. Returns highlighted snippets with session context. |
 | `csk_summarize` | Return a session's LLM summary. Generates on demand (if `ANTHROPIC_API_KEY` is set) or returns cache. |
 | `csk_recap` | List summaries over a date range, grouped by project. "What did I do this week?" in one tool call. |
-
-More tools coming (pattern detection, skill-gap extraction).
+| `csk_patterns` | Cross-session findings from the latest (or specified) `csk patterns` run. Filter by scope (`project`/`global`), project_dir, kind. |
 
 ## Configuration reference
 
@@ -150,26 +151,58 @@ Project filters in `config.json`:
 ## Commands
 
 ```
-csk backup              Mirror the source directory into the blob store
-csk status [--json]     Summarize the last backup and the index
-csk status --host <id>  Filter status by host_id
-csk analyze [opts]      LLM-summarize parsed sessions (requires ANTHROPIC_API_KEY)
-csk doctor              Verify source, store, and blob backend
+csk backup                        Mirror the source directory into the blob store
+csk status [--json]               Summarize the last backup and the index
+csk status --host <id>            Filter status by host_id
+csk analyze [opts]                LLM-summarize parsed sessions (needs ANTHROPIC_API_KEY)
+csk patterns project --dir <X>    Find patterns in one project (repeatable --dir)
+csk patterns global               Find cross-project habits (evidence must span ≥2 projects)
+csk serve [--port 4567]           Launch the read-only web dashboard
+csk doctor                        Verify source, store, and blob backend
 ```
 
 ### `csk analyze`
 
-Generates structured summaries (one-liner, what-tried, outcome, notable events, blog hooks, tags) using Anthropic's API. Summaries are cached in SQLite keyed by the source file's mtime so re-runs skip anything still current.
+Generates structured summaries (one-liner, what-tried, outcome, notable events, friction events, user corrections, intent, tags) using Anthropic's API. Summaries are cached in SQLite keyed by the source file's mtime so re-runs skip anything still current.
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-csk analyze --limit 10              # first 10 unanalyzed sessions
+csk analyze --limit 10                               # first 10 unanalyzed sessions
 csk analyze --project -Users-me-Repo --since 2026-04-01
-csk analyze --dry-run --limit 50    # preview candidates without calling the API
-csk analyze --model claude-haiku-4-5-20251001   # override model
+csk analyze --dry-run --limit 50                     # preview candidates without calling the API
+csk analyze --model claude-haiku-4-5-20251001        # override model
+csk analyze --lang ko                                # respond in Korean (identifiers stay English)
 ```
 
 By default uses Haiku. For 1000 sessions expect ~$3-6 in token costs; the CLI prints per-session usage.
+
+### `csk patterns`
+
+Feeds enriched summaries back to an LLM as one cross-session call, emits structured findings (missing skills, recurring frictions, codebase smells, documentation gaps, test-coverage gaps, API friction) with evidence citing the source sessions. Two modes:
+
+```bash
+# Project mode — one logical project (possibly many worktrees)
+csk patterns project --dir -Users-me-Repo
+csk patterns project --dir -Users-me-Repo --dir -Users-me-Repo-worktree-1
+csk patterns project --match Repo      # substring-match all project_dirs
+
+# Global mode — habits that show up across projects (≥2 distinct project_dirs required)
+csk patterns global --limit 200
+csk patterns global --lang 한국어
+```
+
+Findings persist in `csk_findings` tied to a `run_id`. View via the web dashboard (`/patterns`) or `csk_patterns` MCP tool. Runs without `-y` show a cost estimate and ask for confirmation first.
+
+### `csk serve`
+
+Localhost web dashboard (read-only by default; Analyze and Patterns pages can trigger LLM runs if `ANTHROPIC_API_KEY` is set or provided via an in-browser modal).
+
+```bash
+csk serve                   # http://127.0.0.1:4567
+csk serve --port 8080 --host 127.0.0.1
+```
+
+Pages: Home (stats + recent projects), per-project session tree (main sessions with collapsible subagents), session detail, full-text search, Analyze (cost preview + per-session selection), Patterns (project/global scope, project picker, findings + source sessions).
 
 ## Architecture at a glance
 
@@ -190,10 +223,10 @@ By default uses Haiku. For 1000 sessions expect ~$3-6 in token costs; the CLI pr
 
 ## Roadmap
 
-- **v0.1** — backup + status + MCP `backup_status`. **(current)**
-- **v0.2** — session JSONL parsing, MCP `search_sessions` + `get_session` + `recent`.
-- **v0.3** — LLM summaries (Haiku), `summarize_session`, `recap` (last N days).
-- **v0.4** — pattern detection, skill-gap extraction, team aggregation via Postgres.
+- **v0.1** — backup, index, MCP backup_status. ✅
+- **v0.2** — session parsing, FTS5 search, LLM summaries, interactive analyze, web dashboard, cross-session patterns detection. **(current)** ✅
+- **v0.3** — native S3 blob store (no rclone), rclone setup docs for GDrive/OneDrive.
+- **v0.4** — PostgresSessionStore for multi-host team aggregation; deeper code-aware pattern detection (feed cited source files to the LLM).
 
 ## Contributing
 

@@ -1,11 +1,47 @@
 import { estimateCost, normalizeModelId, priceFor } from "./pricing.js";
 import type { SessionStore } from "./store/index.js";
 import type {
+  SessionCorrection,
   SessionDetailsRecord,
   SessionRecord,
   SessionSummary,
   UserMessageRecord,
 } from "./types.js";
+
+/**
+ * Schema version of the summary prompt. Bumped whenever the prompt gains
+ * fields that downstream features (e.g. `csk patterns`) depend on. Persisted
+ * on each summary row so those features can filter out older shapes cleanly.
+ */
+export const CURRENT_SIGNALS_VERSION = 1;
+
+/** Opaque language value. "auto" = match user's messages. Anything else is a
+ *  free-form label passed to the LLM ("en", "English", "ko", "한국어",
+ *  "日本語", "Français" — whatever the caller wants). No whitelist.
+ *  Default "auto" keeps behavior untouched when the option is omitted. */
+export const DEFAULT_LANGUAGE = "auto";
+
+/** Build the `Language: …` directive appended to system prompts. Empty / null
+ *  / "auto" produces the match-user-language instruction; anything else is
+ *  interpolated directly so users can say "respond in <X>" without the code
+ *  shipping a language table. */
+export function languageDirective(lang: string | undefined | null): string {
+  const norm = (lang ?? "").trim();
+  if (!norm || norm.toLowerCase() === "auto") {
+    return "Language: respond in the same primary language that dominates the user's messages in the provided data. Always keep code identifiers, file paths, and verbatim user quotes in their original form — do not translate them.";
+  }
+  return `Language: respond in ${norm}. Always keep code identifiers, file paths, and verbatim user quotes in their original language — do not translate them.`;
+}
+
+export function resolveLanguage(code: string | undefined | null): string {
+  const norm = (code ?? "").trim();
+  return norm || DEFAULT_LANGUAGE;
+}
+
+/** Summary-prompt overlay. Regardless of output language, these fields stay
+ *  English so cross-session clustering works. */
+export const ANALYZE_LANGUAGE_OVERLAY =
+  'Regardless of the chosen output language, these fields MUST stay in lowercase English tokens so they cluster across sessions: "tags", "intent". Also keep "corrections[].user_quote" verbatim from the user message (do not translate).';
 
 export interface LLMUsage {
   input_tokens: number;
@@ -36,6 +72,8 @@ export interface SummarizeInput {
   >;
   details: SessionDetailsRecord | null;
   userMessages: UserMessageRecord[];
+  /** Output language label. "auto" (default) or any free-form string passed to the LLM. */
+  language?: string;
 }
 
 export interface SummarizeResult {
@@ -77,7 +115,8 @@ export async function summarizeSession(
   client: LLMClient,
 ): Promise<SummarizeResult> {
   const prompt = buildPrompt(input);
-  const response = await client.summarize(prompt);
+  const system = `${prompt.system}\n\n${languageDirective(input.language)}\n${ANALYZE_LANGUAGE_OVERLAY}`;
+  const response = await client.summarize({ ...prompt, system });
   const summary = parseSummary(response.text);
   return {
     summary,
@@ -99,8 +138,21 @@ Respond with **JSON only** — no prose before or after, no markdown fences. The
   "outcome": "string — what actually happened, 1-2 sentences; note failures honestly",
   "notable": ["array of 0-3 short strings — surprising events, errors, dead-ends, refactor decisions"],
   "blog_hooks": ["array of 0-2 short strings — angles worth turning into blog posts; empty if nothing novel"],
-  "tags": ["array of 2-5 short lowercase tokens — e.g. debugging, refactor, ideation, infra, ui, testing"]
-}`;
+  "tags": ["array of 2-5 short lowercase tokens — e.g. debugging, refactor, ideation, infra, ui, testing"],
+  "intent": "string — normalized task intent in 2-6 lowercase words, e.g. 'react component refactor', 'sql migration debugging'; empty string if unclear",
+  "friction_events": ["array of 0-5 short strings — observed retries, backtracks, redo-loops, failed-then-refailed tests, repeated re-reads of the same file. Describe what the assistant did, not the user's intent. Omit if session was smooth."],
+  "corrections": [
+    {
+      "user_quote": "verbatim user sentence that redirects or corrects the assistant",
+      "assistant_action": "one-line description of what the assistant had just done that the user was correcting"
+    }
+  ]
+}
+
+Rules for the new fields:
+- "intent" must be normalized: no tooling names unless central, no proper nouns unless they are the subject. Prefer common phrasing so different sessions working on the same kind of task share the same string.
+- "friction_events" is for observable assistant behavior, not vibes. "retried the same failing test three times with no new info" is good; "struggled" is not. Empty array if the session flowed normally.
+- "corrections" quotes the user verbatim. Include only corrections that suggest a missing rule or skill — ignore cosmetic nitpicks. Empty array if none. Max 5.`;
 
 function buildPrompt(input: SummarizeInput): SummarizePrompt {
   const { session, details, userMessages } = input;
@@ -198,7 +250,7 @@ function coerceSummary(obj: unknown): SessionSummary {
     throw new Error("LLM summary did not parse to an object");
   }
   const o = obj as Record<string, unknown>;
-  return {
+  const summary: SessionSummary = {
     one_liner: stringOr(o.one_liner, ""),
     what_tried: stringOr(o.what_tried, ""),
     outcome: stringOr(o.outcome, ""),
@@ -206,6 +258,27 @@ function coerceSummary(obj: unknown): SessionSummary {
     blog_hooks: stringArray(o.blog_hooks),
     tags: stringArray(o.tags),
   };
+  const intent = stringOr(o.intent, "").trim();
+  if (intent) summary.intent = intent;
+  const friction = stringArray(o.friction_events);
+  if (friction.length > 0) summary.friction_events = friction;
+  const corrections = coerceCorrections(o.corrections);
+  if (corrections.length > 0) summary.corrections = corrections;
+  return summary;
+}
+
+function coerceCorrections(v: unknown): SessionCorrection[] {
+  if (!Array.isArray(v)) return [];
+  const out: SessionCorrection[] = [];
+  for (const item of v) {
+    if (!item || typeof item !== "object") continue;
+    const obj = item as Record<string, unknown>;
+    const quote = stringOr(obj.user_quote, "").trim();
+    const action = stringOr(obj.assistant_action, "").trim();
+    if (!quote) continue;
+    out.push({ user_quote: quote, assistant_action: action });
+  }
+  return out;
 }
 
 function stringOr(v: unknown, fallback: string): string {

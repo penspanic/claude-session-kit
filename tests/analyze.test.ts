@@ -10,18 +10,24 @@ function fakeClient(text: string, usage = { input_tokens: 100, output_tokens: 50
   };
 }
 
-function recordClient(responses: LLMResponse[]): { client: LLMClient; prompts: string[] } {
+function recordClient(responses: LLMResponse[]): {
+  client: LLMClient;
+  prompts: string[];
+  systems: string[];
+} {
   const prompts: string[] = [];
+  const systems: string[] = [];
   let i = 0;
   const client: LLMClient = {
     async summarize(p) {
       prompts.push(p.user);
+      systems.push(p.system);
       const r = responses[i++];
       if (!r) throw new Error("no more canned responses");
       return r;
     },
   };
-  return { client, prompts };
+  return { client, prompts, systems };
 }
 
 const baseSession: SessionRecord = {
@@ -171,6 +177,56 @@ describe("summarizeSession", () => {
     expect(result.summary.outcome).toBe("");
     expect(result.summary.notable).toEqual([]);
     expect(result.summary.blog_hooks).toEqual(["valid hook"]);
+  });
+
+  it("injects a language directive into the system prompt (auto by default)", async () => {
+    const { client, systems } = recordClient([
+      {
+        text: JSON.stringify({
+          one_liner: "",
+          what_tried: "",
+          outcome: "",
+          notable: [],
+          blog_hooks: [],
+          tags: [],
+        }),
+        model: "m",
+        usage: { input_tokens: 0, output_tokens: 0 },
+      },
+    ]);
+    await summarizeSession(
+      { session: baseSession, details: baseDetails, userMessages: msgs(["x"]) },
+      client,
+    );
+    expect(systems[0]!).toContain("Language:");
+    expect(systems[0]!).toContain("same primary language");
+  });
+
+  it("interpolates the provided language verbatim when not auto", async () => {
+    const { client, systems } = recordClient([
+      {
+        text: JSON.stringify({
+          one_liner: "",
+          what_tried: "",
+          outcome: "",
+          notable: [],
+          blog_hooks: [],
+          tags: [],
+        }),
+        model: "m",
+        usage: { input_tokens: 0, output_tokens: 0 },
+      },
+    ]);
+    await summarizeSession(
+      {
+        session: baseSession,
+        details: baseDetails,
+        userMessages: msgs(["x"]),
+        language: "한국어",
+      },
+      client,
+    );
+    expect(systems[0]!).toContain("respond in 한국어");
   });
 
   it("truncates very long user messages to stay within prompt budget", async () => {

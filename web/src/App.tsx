@@ -12,6 +12,7 @@ export function App() {
             <NavItem to="/">Home</NavItem>
             <NavItem to="/search">Search</NavItem>
             <NavItem to="/analyze">Analyze</NavItem>
+            <NavItem to="/patterns">Patterns</NavItem>
           </nav>
           <div className="ml-auto text-xs text-neutral-500">read-only · localhost</div>
         </div>

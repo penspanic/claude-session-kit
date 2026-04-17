@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { AnthropicClient } from "../anthropic.js";
 import type { SessionStore } from "../store/index.js";
 import { AnalyzeJobRegistry } from "./jobs.js";
+import { PatternsJobRegistry } from "./patterns-jobs.js";
 import { routeApi } from "./router.js";
 import type { HandlerContext } from "./handlers.js";
 
@@ -53,6 +54,7 @@ export function startServer(options: ServeOptions): Promise<{ server: Server; ur
     userId: options.userId,
     dataDir: options.dataDir,
     jobs: new AnalyzeJobRegistry(),
+    patternsJobs: new PatternsJobRegistry(),
     llmAvailable: () => runtime.apiKey !== null,
     apiKeySource: () => runtime.source,
     apiKeyPreview: () => (runtime.apiKey ? runtime.apiKey.slice(-4) : null),
@@ -75,9 +77,13 @@ export function startServer(options: ServeOptions): Promise<{ server: Server; ur
       runtime.source = null;
       return true;
     },
-    makeLLMClient: (model) => {
+    makeLLMClient: (model, opts) => {
       if (!runtime.apiKey) return null;
-      return new AnthropicClient({ apiKey: runtime.apiKey, model });
+      return new AnthropicClient({
+        apiKey: runtime.apiKey,
+        model,
+        maxTokens: opts?.maxTokens,
+      });
     },
   };
 

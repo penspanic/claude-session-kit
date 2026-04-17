@@ -4,6 +4,9 @@ import m002 from "./002_session_details.js";
 import m003 from "./003_user_messages_fts.js";
 import m004 from "./004_session_summaries.js";
 import m005 from "./005_session_resume_fields.js";
+import m006 from "./006_patterns.js";
+import m007 from "./007_patterns_sources.js";
+import m008 from "./008_patterns_scope.js";
 
 export interface Migration {
   version: number;
@@ -15,7 +18,7 @@ export interface Migration {
  * Ordered list of all migrations. Add new ones here.
  * Versions must be unique, strictly increasing integers.
  */
-const MIGRATIONS: Migration[] = [m001, m002, m003, m004, m005];
+const MIGRATIONS: Migration[] = [m001, m002, m003, m004, m005, m006, m007, m008];
 
 // Sanity check: versions are strictly increasing.
 for (let i = 1; i < MIGRATIONS.length; i += 1) {

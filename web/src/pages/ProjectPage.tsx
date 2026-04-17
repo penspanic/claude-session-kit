@@ -53,12 +53,20 @@ export function ProjectPage() {
           <div className="text-xs text-neutral-500 break-all">{decodeProjectDir(projectDir)}</div>
           <div className="text-[11px] text-neutral-600 mt-0.5">{projectDir}</div>
         </div>
-        <Link
-          to={`/analyze?project=${encodeURIComponent(projectDir)}`}
-          className="shrink-0 px-3 py-1.5 rounded border border-neutral-700 text-xs hover:border-neutral-500 hover:bg-neutral-900"
-        >
-          Analyze →
-        </Link>
+        <div className="shrink-0 flex gap-2">
+          <Link
+            to={`/patterns?scope=project&dirs=${encodeURIComponent(projectDir)}`}
+            className="px-3 py-1.5 rounded border border-neutral-700 text-xs hover:border-neutral-500 hover:bg-neutral-900"
+          >
+            Patterns →
+          </Link>
+          <Link
+            to={`/analyze?project=${encodeURIComponent(projectDir)}`}
+            className="px-3 py-1.5 rounded border border-neutral-700 text-xs hover:border-neutral-500 hover:bg-neutral-900"
+          >
+            Analyze →
+          </Link>
+        </div>
       </div>
 
       {error && <ErrorBox message={error} />}
