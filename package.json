@@ -1,6 +1,6 @@
 {
   "name": "claude-session-kit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Back up, index, and analyze Claude Code session logs. Exposes an MCP server so AI agents can query the archive natively.",
   "keywords": [
     "claude",
