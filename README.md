@@ -2,8 +2,30 @@
 
 > Back up, index, and analyze Claude Code session logs. Ships an MCP server so AI agents can query the archive natively.
 
+[![npm](https://img.shields.io/npm/v/claude-session-kit.svg)](https://www.npmjs.com/package/claude-session-kit)
 [![CI](https://github.com/penspanic/claude-session-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/penspanic/claude-session-kit/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+
+```mermaid
+flowchart LR
+  jsonl["~/.claude/projects/<br/>*.jsonl<br/><i>deleted after 30d</i>"]
+
+  subgraph csk["claude-session-kit"]
+    direction TB
+    backup["csk backup"] --> store[("SQLite index<br/>+ blob mirror<br/>+ FTS5 search")]
+    store --> analyze["csk analyze<br/>per-session LLM summary<br/><i>intent · friction · corrections</i>"]
+    analyze --> patterns["csk patterns<br/>project / global<br/><i>cross-session findings</i>"]
+  end
+
+  jsonl --> backup
+
+  findings["Findings<br/>• repetition / skill_gap<br/>• correction_pattern<br/>• codebase_smell / api_friction<br/>• documentation_gap / test_coverage_gap<br/><br/><b>→ CLAUDE.md · new skill · refactor · docs · tests</b>"]
+  patterns --> findings
+
+  surfaces["CLI&nbsp;&nbsp;|&nbsp;&nbsp;Web dashboard (csk serve)&nbsp;&nbsp;|&nbsp;&nbsp;MCP server (agents)"]
+  store --- surfaces
+  findings --- surfaces
+```
 
 ## Why
 
