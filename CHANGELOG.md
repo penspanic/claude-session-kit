@@ -4,6 +4,20 @@ All notable changes to `claude-session-kit` are documented in this file. The for
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-04-17
+
+### Added
+
+- **Light + dark theme** for the web dashboard, backed by a set of semantic color tokens (`bg`, `bg-elev`, `bg-sunk`, `text`, `dim`, `faint`, `border`, `border-strong`, `accent`) driven by CSS variables. Header gains a three-state toggle (Light / Dark / System); the inline script in `index.html` applies the resolved theme before React paints to avoid a dark→light flash on reload. Dark-mode contrast lifted — small gray meta text now uses neutral-400 instead of neutral-500.
+- **Collapsible evidence sections** on each Patterns finding. Title, description, and suggested remedy stay visible; the evidence list is behind a disclosure row (`Evidence · N sessions ▸`) that starts collapsed.
+- **Repo-wide story reframe**: README tagline, package description, keywords, and "Why" section now lead with cross-session pattern detection (the real differentiator) instead of MCP/backup.
+- **Mermaid pipeline diagram** in the README: JSONL → backup/index/FTS5 → analyze → patterns → actionable findings, with CLI / web / MCP as parallel surfaces.
+- **npm version badge**.
+
+### Changed
+
+- Compact Patterns finding cards: tighter padding and spacing so more findings fit on screen without scrolling.
+
 ## [0.2.0] — 2026-04-17
 
 First publish to npm. Includes every feature shipped since the initial v0.1.0 GitHub release.
@@ -35,6 +49,7 @@ First publish to npm. Includes every feature shipped since the initial v0.1.0 Gi
 - Session classification (main vs subagent) and parent linkage for subagent logs.
 - Cron installer script for daily backups.
 
-[Unreleased]: https://github.com/penspanic/claude-session-kit/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/penspanic/claude-session-kit/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/penspanic/claude-session-kit/releases/tag/v0.2.1
 [0.2.0]: https://github.com/penspanic/claude-session-kit/releases/tag/v0.2.0
 [0.1.0]: https://github.com/penspanic/claude-session-kit/releases/tag/v0.1.0
